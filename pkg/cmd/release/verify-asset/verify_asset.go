@@ -161,7 +161,8 @@ func verifyAssetRun(config *VerifyAssetConfig) error {
 		// The limit is set to 100 to ensure we fetch all attestations for a given SHA.
 		// While multiple attestations can exist for a single SHA,
 		// only one attestation is associated with each release tag.
-		Limit: 100,
+		Initiator: "github",
+		Limit:     100,
 	})
 	if err != nil {
 		return fmt.Errorf("no attestations found for tag %s (%s)", tagName, releaseRefDigest.DigestWithAlg())
