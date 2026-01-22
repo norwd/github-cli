@@ -1,8 +1,6 @@
 module github.com/cli/cli/v2
 
-go 1.25.0
-
-toolchain go1.25.5
+go 1.25.5
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
@@ -48,7 +46,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	github.com/theupdateframework/go-tuf/v2 v2.3.0
+	github.com/theupdateframework/go-tuf/v2 v2.3.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	github.com/yuin/goldmark v1.7.16
 	github.com/zalando/go-keyring v0.2.6
@@ -57,7 +55,7 @@ require (
 	golang.org/x/term v0.38.0
 	golang.org/x/text v0.32.0
 	google.golang.org/grpc v1.77.0
-	google.golang.org/protobuf v1.36.10
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/h2non/gock.v1 v1.1.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -155,13 +153,13 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rodaine/table v1.3.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.9.1 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/shurcooL/graphql v0.0.0-20230722043721-ed46e5a46466 // indirect
 	github.com/sigstore/rekor v1.4.3 // indirect
 	github.com/sigstore/rekor-tiles/v2 v2.0.1 // indirect
-	github.com/sigstore/sigstore v1.10.0 // indirect
+	github.com/sigstore/sigstore v1.10.4 // indirect
 	github.com/sigstore/timestamp-authority/v2 v2.0.3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
