@@ -894,11 +894,13 @@ func Test_createRun(t *testing.T) {
 					httpmock.StringResponse(`{"data": {"viewer": {"login": "monalisa"} } }`))
 				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/forks"),
-					httpmock.StatusStringResponse(201, `
+					httpmock.RESTPayload(201, `
 							{ "node_id": "NODEID",
 							  "name": "REPO",
 							  "owner": {"login": "monalisa"}
-							}`))
+							}`, func(payload map[string]interface{}) {
+						assert.Equal(t, true, payload["default_branch_only"])
+					}))
 				reg.Register(
 					httpmock.GraphQL(`mutation PullRequestCreate\b`),
 					httpmock.GraphQLMutation(`
