@@ -696,3 +696,71 @@ func TestReleaseFeatures(t *testing.T) {
 		})
 	}
 }
+
+func TestActionsFeatures(t *testing.T) {
+	tests := []struct {
+		name         string
+		hostname     string
+		httpStubs    func(*httpmock.Registry)
+		wantFeatures ActionsFeatures
+	}{
+		{
+			name:     "github.com, workflow dispatch run details supported",
+			hostname: "github.com",
+			wantFeatures: ActionsFeatures{
+				DispatchRunDetails: true,
+			},
+		},
+		{
+			name:     "ghec data residency (ghe.com), workflow dispatch run details supported",
+			hostname: "stampname.ghe.com",
+			wantFeatures: ActionsFeatures{
+				DispatchRunDetails: true,
+			},
+		},
+		{
+			name:     "GHE 3.20, workflow dispatch run details not supported",
+			hostname: "git.my.org",
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.REST("GET", "api/v3/meta"),
+					httpmock.StringResponse(`{"installed_version":"3.20.999"}`),
+				)
+			},
+			wantFeatures: ActionsFeatures{
+				DispatchRunDetails: false,
+			},
+		},
+		{
+			name:     "GHE 3.21, workflow dispatch run details supported",
+			hostname: "git.my.org",
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.REST("GET", "api/v3/meta"),
+					httpmock.StringResponse(`{"installed_version":"3.21.0"}`),
+				)
+			},
+			wantFeatures: ActionsFeatures{
+				DispatchRunDetails: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			reg := &httpmock.Registry{}
+			if tt.httpStubs != nil {
+				tt.httpStubs(reg)
+			}
+			httpClient := &http.Client{}
+			httpmock.ReplaceTripper(httpClient, reg)
+
+			detector := NewDetector(httpClient, tt.hostname)
+
+			features, err := detector.ActionsFeatures()
+			require.NoError(t, err)
+			require.Equal(t, tt.wantFeatures, features)
+		})
+	}
+}

@@ -18,6 +18,7 @@ type Detector interface {
 	ProjectsV1() gh.ProjectsV1Support
 	SearchFeatures() (SearchFeatures, error)
 	ReleaseFeatures() (ReleaseFeatures, error)
+	ActionsFeatures() (ActionsFeatures, error)
 }
 
 type IssueFeatures struct {
@@ -96,6 +97,16 @@ var advancedIssueSearchSupportedAsOnlyBackend = SearchFeatures{
 
 type ReleaseFeatures struct {
 	ImmutableReleases bool
+}
+
+type ActionsFeatures struct {
+	// DispatchRunDetails indicates whether the API supports the `return_run_details`
+	// field in workflow dispatches that, when set to true, will return the details
+	// of the created workflow run in the response (with status code 200).
+	//
+	// On older API versions (e.g. GHES 3.20 or earlier), this new field is not
+	// supported and setting it will cause an error.
+	DispatchRunDetails bool
 }
 
 type detector struct {
@@ -391,6 +402,54 @@ func (d *detector) ReleaseFeatures() (ReleaseFeatures, error) {
 	}
 
 	return ReleaseFeatures{}, nil
+}
+
+const (
+	enterpriseWorkflowDispatchRunDetailsSupport = "3.21.0"
+)
+
+func (d *detector) ActionsFeatures() (ActionsFeatures, error) {
+	// TODO workflowDispatchRunDetailsCleanup
+	// Once GHES 3.20 support ends, we don't need feature detection for workflow dispatch (i.e. run details support).
+	//
+	// On github.com, workflow dispatch API now supports a new field named `return_run_details` that enabling it will
+	// result in a 200 OK response with the details of the created workflow run. If not set (or set to false), the API
+	// will keep the old behavior of returning a 204 No Content response.
+	//
+	// On GHES (current latest at 3.20), this new field is not available, and setting it will cause a 400 response.
+	//
+	// Once GHES 3.20 support ends, we can remove the feature detection and start using the new field in API calls.
+	//
+	// IMPORTANT: In the future REST API versions (i.e. breaking changes), the workflow dispatch endpoint is going to
+	// always return the details of the created workflow run in the response, and the `return_run_details` field is
+	// going to be ignored/removed. So, once we are migrating to the new API version we should double check the status
+	// of the API.
+
+	if !ghauth.IsEnterprise(d.host) {
+		return ActionsFeatures{
+			DispatchRunDetails: true,
+		}, nil
+	}
+
+	minSupportedVersion, err := version.NewVersion(enterpriseWorkflowDispatchRunDetailsSupport)
+	if err != nil {
+		return ActionsFeatures{}, err
+	}
+
+	hostVersion, err := resolveEnterpriseVersion(d.httpClient, d.host)
+	if err != nil {
+		return ActionsFeatures{}, err
+	}
+
+	if hostVersion.GreaterThanOrEqual(minSupportedVersion) {
+		return ActionsFeatures{
+			DispatchRunDetails: true,
+		}, nil
+	}
+
+	return ActionsFeatures{
+		DispatchRunDetails: false,
+	}, nil
 }
 
 func resolveEnterpriseVersion(httpClient *http.Client, host string) (*version.Version, error) {

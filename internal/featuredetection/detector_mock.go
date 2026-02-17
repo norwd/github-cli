@@ -28,6 +28,10 @@ func (md *DisabledDetectorMock) ReleaseFeatures() (ReleaseFeatures, error) {
 	return ReleaseFeatures{}, nil
 }
 
+func (md *DisabledDetectorMock) ActionsFeatures() (ActionsFeatures, error) {
+	return ActionsFeatures{}, nil
+}
+
 type EnabledDetectorMock struct{}
 
 func (md *EnabledDetectorMock) IssueFeatures() (IssueFeatures, error) {
@@ -53,6 +57,12 @@ func (md *EnabledDetectorMock) SearchFeatures() (SearchFeatures, error) {
 func (md *EnabledDetectorMock) ReleaseFeatures() (ReleaseFeatures, error) {
 	return ReleaseFeatures{
 		ImmutableReleases: true,
+	}, nil
+}
+
+func (md *EnabledDetectorMock) ActionsFeatures() (ActionsFeatures, error) {
+	return ActionsFeatures{
+		DispatchRunDetails: true,
 	}, nil
 }
 
