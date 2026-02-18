@@ -114,7 +114,7 @@ func runList(config listConfig) error {
 			return err
 		}
 		if !features.ProjectItemQuery {
-			return fmt.Errorf("the `--query` flag is not supported on this GitHub host; most likely you are targeting a version of GHES that does not yet have the query field available")
+			return fmt.Errorf("the `--query` flag is not supported on this GitHub host")
 		}
 	}
 
