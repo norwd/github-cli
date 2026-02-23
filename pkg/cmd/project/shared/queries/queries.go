@@ -147,6 +147,34 @@ type Project struct {
 	}
 }
 
+// ProjectMutationQuery is a ProjectV2 response shape for mutation payloads.
+// It intentionally avoids the queryable items connection to prevent requiring a $query variable.
+type ProjectMutationQuery struct {
+	Number           int32
+	URL              string
+	ShortDescription string
+	Public           bool
+	Closed           bool
+	Title            string
+	ID               string
+	Readme           string
+	Items            struct {
+		TotalCount int
+	} `graphql:"items(first: $firstItems, after: $afterItems)"`
+	Fields struct {
+		TotalCount int
+	} `graphql:"fields(first: $firstFields, after: $afterFields)"`
+	Owner struct {
+		TypeName string `graphql:"__typename"`
+		User     struct {
+			Login string
+		} `graphql:"... on User"`
+		Organization struct {
+			Login string
+		} `graphql:"... on Organization"`
+	}
+}
+
 // Below, you will find the query structs to represent fetching a project via the GraphQL API.
 // Prior to GHES 3.20, the query argument did not exist on the items connection, so we have
 // one base struct and two structs that embed and add the Items connection with and without the query argument.
@@ -259,6 +287,40 @@ func (p Project) OwnerType() string {
 }
 
 func (p Project) OwnerLogin() string {
+	if p.OwnerType() == "User" {
+		return p.Owner.User.Login
+	}
+	return p.Owner.Organization.Login
+}
+
+func (p ProjectMutationQuery) ExportData(_ []string) map[string]interface{} {
+	return map[string]interface{}{
+		"number":           p.Number,
+		"url":              p.URL,
+		"shortDescription": p.ShortDescription,
+		"public":           p.Public,
+		"closed":           p.Closed,
+		"title":            p.Title,
+		"id":               p.ID,
+		"readme":           p.Readme,
+		"items": map[string]interface{}{
+			"totalCount": p.Items.TotalCount,
+		},
+		"fields": map[string]interface{}{
+			"totalCount": p.Fields.TotalCount,
+		},
+		"owner": map[string]interface{}{
+			"type":  p.OwnerType(),
+			"login": p.OwnerLogin(),
+		},
+	}
+}
+
+func (p ProjectMutationQuery) OwnerType() string {
+	return p.Owner.TypeName
+}
+
+func (p ProjectMutationQuery) OwnerLogin() string {
 	if p.OwnerType() == "User" {
 		return p.Owner.User.Login
 	}

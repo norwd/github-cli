@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cli/cli/v2/pkg/iostreams"
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/h2non/gock.v1"
 )
@@ -16,6 +17,52 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestProjectMutationQuery_DoesNotRequireQueryVariable(t *testing.T) {
+	ios, _, _, _ := iostreams.Test()
+	httpClient := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			assert.NoError(t, err)
+			assert.NotContains(t, string(body), "$query")
+
+			return &http.Response{
+				StatusCode: 200,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{
+					"data": {
+						"updateProjectV2": {
+							"projectV2": {
+								"id": "project ID",
+								"url": "http://example.com"
+							}
+						}
+					}
+				}`)),
+			}, nil
+		}),
+	}
+
+	client := NewClient(httpClient, "github.com", ios)
+	mutation := struct {
+		UpdateProjectV2 struct {
+			ProjectV2 ProjectMutationQuery `graphql:"projectV2"`
+		} `graphql:"updateProjectV2(input:$input)"`
+	}{}
+
+	err := client.Mutate("UpdateProjectV2", &mutation, map[string]interface{}{
+		"input": githubv4.UpdateProjectV2Input{
+			ProjectID: githubv4.ID("project ID"),
+		},
+		"firstItems":  githubv4.Int(0),
+		"afterItems":  (*githubv4.String)(nil),
+		"firstFields": githubv4.Int(0),
+		"afterFields": (*githubv4.String)(nil),
+	})
+	assert.NoError(t, err)
 }
 
 func TestProjectItems_DefaultLimit(t *testing.T) {
