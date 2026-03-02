@@ -103,6 +103,11 @@ func (c *Client) Mutate(operationName string, query interface{}, variables map[s
 	return handleError(err)
 }
 
+func (c *Client) Query(operationName string, query interface{}, variables map[string]interface{}) error {
+	err := c.apiClient.Query(operationName, query, variables)
+	return handleError(err)
+}
+
 // PageInfo is a PageInfo GraphQL object https://docs.github.com/en/graphql/reference/objects#pageinfo.
 type PageInfo struct {
 	EndCursor   githubv4.String
