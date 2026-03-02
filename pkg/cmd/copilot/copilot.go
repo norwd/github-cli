@@ -170,6 +170,7 @@ func runCopilot(opts *CopilotOptions) error {
 	externalCmd.Stdin = opts.IO.In
 	externalCmd.Stdout = opts.IO.Out
 	externalCmd.Stderr = opts.IO.ErrOut
+	externalCmd.Env = append(os.Environ(), "COPILOT_GH=true")
 
 	if err := externalCmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
