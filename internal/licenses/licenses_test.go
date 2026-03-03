@@ -1,85 +1,160 @@
 package licenses
 
 import (
-	"path/filepath"
-	"strings"
+	"io/fs"
 	"testing"
 	"testing/fstest"
 
+	"github.com/MakeNowJust/heredoc"
 	"github.com/stretchr/testify/require"
 )
 
-func TestContent_reportOnly(t *testing.T) {
-	report := "dep1 (v1.0.0) - MIT - https://example.com\n"
-	fsys := fstest.MapFS{
-		"third-party/PLACEHOLDER": &fstest.MapFile{Data: []byte("placeholder")},
-	}
-
-	actualContent := content(report, fsys, "third-party")
-
-	require.True(t, strings.HasPrefix(actualContent, report), "expected output to start with report")
-	require.NotContains(t, actualContent, "PLACEHOLDER")
-	require.NotContains(t, actualContent, "====")
+func TestContent(t *testing.T) {
+	// This test is to ensure that we don't accidentally commit actual license
+	// files in the repo. The embedded content is only included in release builds,
+	// so in a normal test build we should get a default message.
+	require.Equal(t, "License information is only available in official release builds.\n", Content())
 }
 
-func TestContent_singleModule(t *testing.T) {
-	report := "example.com/mod (v1.0.0) - MIT - https://example.com\n"
-	fsys := fstest.MapFS{
-		"third-party/example.com/mod/LICENSE": &fstest.MapFile{
-			Data: []byte("MIT License\n\nCopyright (c) 2024"),
+func TestContent_tableTests(t *testing.T) {
+	tests := []struct {
+		name     string
+		fsys     fstest.MapFS
+		expected string
+	}{
+		{
+			name: "report only",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("dep1 (v1.0.0) - MIT - https://example.com\n")},
+			},
+			expected: heredoc.Doc(`
+				dep1 (v1.0.0) - MIT - https://example.com
+
+			`),
+		},
+		{
+			name: "empty third-party dir",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("dep1 (v1.0.0) - MIT - https://example.com\n")},
+				"embed/os-arch/third-party": &fstest.MapFile{Data: []byte{}, Mode: fs.ModeDir},
+			},
+			expected: heredoc.Doc(`
+				dep1 (v1.0.0) - MIT - https://example.com
+
+			`),
+		},
+		{
+			name: "unknown file at root ignored",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("dep1 (v1.0.0) - MIT - https://example.com\n")},
+				"embed/os-arch/unknown": &fstest.MapFile{
+					Data: []byte("MIT License\n\nCopyright (c) 2024"),
+				},
+			},
+			expected: heredoc.Doc(`
+				dep1 (v1.0.0) - MIT - https://example.com
+
+			`),
+		},
+		{
+			name: "unknown directory at root ignored",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("dep1 (v1.0.0) - MIT - https://example.com\n")},
+				"embed/os-arch/unknown/example.com/mod/LICENSE": &fstest.MapFile{
+					Data: []byte("MIT License\n\nCopyright (c) 2024"),
+				},
+			},
+			expected: heredoc.Doc(`
+				dep1 (v1.0.0) - MIT - https://example.com
+
+			`),
+		},
+		{
+			name: "single module",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("example.com/mod (v1.0.0) - MIT - https://example.com\n")},
+				"embed/os-arch/third-party/example.com/mod/LICENSE": &fstest.MapFile{
+					Data: []byte("MIT License\n\nCopyright (c) 2024"),
+				},
+			},
+			expected: heredoc.Doc(`
+				example.com/mod (v1.0.0) - MIT - https://example.com
+
+				================================================================================
+				example.com/mod
+				================================================================================
+				
+				MIT License
+				
+				Copyright (c) 2024
+
+			`),
+		},
+		{
+			name: "multiple modules sorted alphabetically",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("example.com/mod (v1.0.0) - MIT - https://example.com\n")},
+				"embed/os-arch/third-party/github.com/zzz/pkg/LICENSE": &fstest.MapFile{
+					Data: []byte("ZZZ License"),
+				},
+				"embed/os-arch/third-party/github.com/aaa/pkg/LICENSE": &fstest.MapFile{
+					Data: []byte("AAA License"),
+				},
+			},
+			expected: heredoc.Doc(`
+				example.com/mod (v1.0.0) - MIT - https://example.com
+
+				================================================================================
+				github.com/aaa/pkg
+				================================================================================
+				
+				AAA License
+
+				================================================================================
+				github.com/zzz/pkg
+				================================================================================
+				
+				ZZZ License
+
+			`),
+		},
+		{
+			name: "license and notice files",
+			fsys: fstest.MapFS{
+				"embed/os-arch/PLACEHOLDER": &fstest.MapFile{}, // Checked-in placeholder, so it's always there.
+				"embed/os-arch/report.txt":  &fstest.MapFile{Data: []byte("example.com/mod (v1.0.0) - MIT - https://example.com\n")},
+				"embed/os-arch/third-party/example.com/mod/LICENSE": &fstest.MapFile{
+					Data: []byte("Apache License 2.0"),
+				},
+				"embed/os-arch/third-party/example.com/mod/NOTICE": &fstest.MapFile{
+					Data: []byte("Copyright 2024 Example Corp"),
+				},
+			},
+			expected: heredoc.Doc(`
+				example.com/mod (v1.0.0) - MIT - https://example.com
+
+				================================================================================
+				example.com/mod
+				================================================================================
+				
+				Apache License 2.0
+				
+				Copyright 2024 Example Corp
+
+			`),
 		},
 	}
 
-	actualContent := content(report, fsys, "third-party")
-
-	require.Contains(t, actualContent, filepath.FromSlash("example.com/mod"))
-	require.Contains(t, actualContent, "MIT License")
-}
-
-func TestContent_multipleModulesSortedAlphabetically(t *testing.T) {
-	report := "header\n"
-	fsys := fstest.MapFS{
-		"third-party/github.com/zzz/pkg/LICENSE": &fstest.MapFile{
-			Data: []byte("ZZZ License"),
-		},
-		"third-party/github.com/aaa/pkg/LICENSE": &fstest.MapFile{
-			Data: []byte("AAA License"),
-		},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := content(tt.fsys, "embed/os-arch")
+			require.Equal(t, tt.expected, got)
+		})
 	}
-
-	actualContent := content(report, fsys, "third-party")
-
-	aIdx := strings.Index(actualContent, filepath.FromSlash("github.com/aaa/pkg"))
-	zIdx := strings.Index(actualContent, filepath.FromSlash("github.com/zzz/pkg"))
-	require.NotEqual(t, -1, aIdx, "expected aaa module in output")
-	require.NotEqual(t, -1, zIdx, "expected zzz module in output")
-	require.Less(t, aIdx, zIdx, "expected modules to be sorted alphabetically")
-}
-
-func TestContent_licenseAndNoticeFiles(t *testing.T) {
-	report := "header\n"
-	fsys := fstest.MapFS{
-		"third-party/example.com/mod/LICENSE": &fstest.MapFile{
-			Data: []byte("Apache License 2.0"),
-		},
-		"third-party/example.com/mod/NOTICE": &fstest.MapFile{
-			Data: []byte("Copyright 2024 Example Corp"),
-		},
-	}
-
-	actualContent := content(report, fsys, "third-party")
-
-	require.Contains(t, actualContent, "Apache License 2.0")
-	require.Contains(t, actualContent, "Copyright 2024 Example Corp")
-}
-
-func TestContent_emptyThirdPartyDir(t *testing.T) {
-	report := "header\n"
-	fsys := fstest.MapFS{
-		"third-party/empty": &fstest.MapFile{Data: []byte("")},
-	}
-
-	actualContent := content(report, fsys, "third-party")
-
-	require.True(t, strings.HasPrefix(actualContent, "header\n"), "expected output to start with report header")
 }

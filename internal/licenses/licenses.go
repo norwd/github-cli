@@ -1,28 +1,31 @@
 package licenses
 
 import (
-	"embed"
 	"fmt"
 	"io/fs"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 )
 
-//go:embed embed/report.txt
-var report string
-
-//go:embed all:embed/third-party
-var thirdParty embed.FS
-
+// Content returns the full license report, including the main report and all
+// third-party licenses.
 func Content() string {
-	return content(report, thirdParty, "embed/third-party")
+	return content(embedFS, rootDir)
 }
 
-func content(report string, thirdPartyFS fs.ReadFileFS, root string) string {
+func content(embedFS fs.ReadFileFS, rootDir string) string {
 	var b strings.Builder
 
-	b.WriteString(report)
+	reportPath := path.Join(rootDir, "report.txt")
+	thirdPartyPath := path.Join(rootDir, "third-party")
+
+	report, err := fs.ReadFile(embedFS, reportPath)
+	if err != nil {
+		return "License information is only available in official release builds.\n"
+	}
+
+	b.Write(report)
 	b.WriteString("\n")
 
 	// Walk the third-party directory and output each license/notice file
@@ -32,8 +35,13 @@ func content(report string, thirdPartyFS fs.ReadFileFS, root string) string {
 		files []string
 	}
 
+	thirdPartyFS, err := fs.Sub(embedFS, thirdPartyPath)
+	if err != nil {
+		return b.String()
+	}
+
 	modules := map[string]*moduleFiles{}
-	fs.WalkDir(thirdPartyFS, root, func(filePath string, d fs.DirEntry, err error) error {
+	fs.WalkDir(thirdPartyFS, ".", func(filePath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("failed to read embedded file %s: %w", filePath, err)
 		}
@@ -42,18 +50,11 @@ func content(report string, thirdPartyFS fs.ReadFileFS, root string) string {
 			return nil
 		}
 
-		name := d.Name()
-		if name == "PLACEHOLDER" {
-			return nil
+		dir := path.Dir(filePath)
+		if _, ok := modules[dir]; !ok {
+			modules[dir] = &moduleFiles{path: dir}
 		}
-
-		// Module path is the directory relative to root
-		dir := filepath.Dir(filepath.FromSlash(filePath))
-		rel, _ := filepath.Rel(filepath.FromSlash(root), dir)
-		if _, ok := modules[rel]; !ok {
-			modules[rel] = &moduleFiles{path: rel}
-		}
-		modules[rel].files = append(modules[rel].files, filePath)
+		modules[dir].files = append(modules[dir].files, filePath)
 		return nil
 	})
 
@@ -71,7 +72,7 @@ func content(report string, thirdPartyFS fs.ReadFileFS, root string) string {
 		b.WriteString("================================================================================\n\n")
 
 		for _, filePath := range mod.files {
-			data, err := thirdPartyFS.ReadFile(filePath)
+			data, err := fs.ReadFile(thirdPartyFS, filePath)
 			if err != nil {
 				continue
 			}
