@@ -26,7 +26,7 @@ func TestPullRequestGraphQL(t *testing.T) {
 		{
 			name:   "compressed query",
 			fields: []string{"files"},
-			want:   "files(first: 100) {nodes {additions,deletions,path}}",
+			want:   "files(first: 100) {nodes {additions,deletions,path,changeType}}",
 		},
 		{
 			name:   "invalid fields",
@@ -72,7 +72,7 @@ func TestIssueGraphQL(t *testing.T) {
 		{
 			name:   "compressed query",
 			fields: []string{"files"},
-			want:   "files(first: 100) {nodes {additions,deletions,path}}",
+			want:   "files(first: 100) {nodes {additions,deletions,path,changeType}}",
 		},
 		{
 			name:   "projectItems",

@@ -148,7 +148,8 @@ var prFiles = shortenQuery(`
 		nodes {
 			additions,
 			deletions,
-			path
+			path,
+			changeType
 		}
 	}
 `)

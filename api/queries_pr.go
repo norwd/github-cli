@@ -296,9 +296,10 @@ type PullRequestCommitCommit struct {
 }
 
 type PullRequestFile struct {
-	Path      string `json:"path"`
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
+	Path       string `json:"path"`
+	Additions  int    `json:"additions"`
+	Deletions  int    `json:"deletions"`
+	ChangeType string `json:"changeType"`
 }
 
 type ReviewRequests struct {
