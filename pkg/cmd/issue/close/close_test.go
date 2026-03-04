@@ -16,6 +16,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type issueFeaturesDetectorMock struct {
+	fd.EnabledDetectorMock
+	issueFeatures fd.IssueFeatures
+}
+
+func (md *issueFeaturesDetectorMock) IssueFeatures() (fd.IssueFeatures, error) {
+	return md.issueFeatures, nil
+}
+
 func TestNewCmdClose(t *testing.T) {
 	// Test shared parsing of issue number / URL.
 	argparsetest.TestArgParsing(t, NewCmdClose)
@@ -43,6 +52,29 @@ func TestNewCmdClose(t *testing.T) {
 				IssueNumber: 123,
 				Reason:      "not planned",
 			},
+		},
+		{
+			name:  "reason duplicate",
+			input: "123 --reason duplicate",
+			output: CloseOptions{
+				IssueNumber: 123,
+				Reason:      "duplicate",
+			},
+		},
+		{
+			name:  "duplicate of sets duplicate reason",
+			input: "123 --duplicate-of 456",
+			output: CloseOptions{
+				IssueNumber: 123,
+				Reason:      "duplicate",
+				DuplicateOf: "456",
+			},
+		},
+		{
+			name:    "duplicate of with invalid reason",
+			input:   "123 --reason completed --duplicate-of 456",
+			wantErr: true,
+			errMsg:  "`--duplicate-of` can only be used with `--reason duplicate`",
 		},
 	}
 	for _, tt := range tests {
@@ -74,6 +106,7 @@ func TestNewCmdClose(t *testing.T) {
 			assert.Equal(t, tt.output.IssueNumber, gotOpts.IssueNumber)
 			assert.Equal(t, tt.output.Comment, gotOpts.Comment)
 			assert.Equal(t, tt.output.Reason, gotOpts.Reason)
+			assert.Equal(t, tt.output.DuplicateOf, gotOpts.DuplicateOf)
 			if tt.expectedBaseRepo != nil {
 				baseRepo, err := gotOpts.BaseRepo()
 				require.NoError(t, err)
@@ -183,6 +216,201 @@ func TestCloseRun(t *testing.T) {
 				)
 			},
 			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
+		},
+		{
+			name: "close issue with duplicate reason",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				Reason:      "duplicate",
+				Detector:    &fd.EnabledDetectorMock{},
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`mutation IssueClose\b`),
+					httpmock.GraphQLMutation(`{"id": "THE-ID"}`,
+						func(inputs map[string]interface{}) {
+							assert.Equal(t, 2, len(inputs))
+							assert.Equal(t, "THE-ID", inputs["issueId"])
+							assert.Equal(t, "DUPLICATE", inputs["stateReason"])
+						}),
+				)
+			},
+			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
+		},
+		{
+			name: "close issue as duplicate of another issue",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				DuplicateOf: "99",
+				Detector:    &fd.EnabledDetectorMock{},
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "DUPLICATE-ID", "number": 99}
+            } } }`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`mutation IssueClose\b`),
+					httpmock.GraphQLMutation(`{"id": "THE-ID"}`,
+						func(inputs map[string]interface{}) {
+							assert.Equal(t, 3, len(inputs))
+							assert.Equal(t, "THE-ID", inputs["issueId"])
+							assert.Equal(t, "DUPLICATE", inputs["stateReason"])
+							assert.Equal(t, "DUPLICATE-ID", inputs["duplicateIssueId"])
+						}),
+				)
+			},
+			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
+		},
+		{
+			name: "close issue with duplicate reason when duplicate is not supported",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				Reason:      "duplicate",
+				Detector: &issueFeaturesDetectorMock{
+					issueFeatures: fd.IssueFeatures{
+						StateReason:          true,
+						StateReasonDuplicate: false,
+					},
+				},
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`mutation IssueClose\b`),
+					httpmock.GraphQLMutation(`{"id": "THE-ID"}`,
+						func(inputs map[string]interface{}) {
+							assert.Equal(t, 1, len(inputs))
+							assert.Equal(t, "THE-ID", inputs["issueId"])
+						}),
+				)
+			},
+			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
+		},
+		{
+			name: "close issue as duplicate when duplicate is not supported",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				DuplicateOf: "99",
+				Detector: &issueFeaturesDetectorMock{
+					issueFeatures: fd.IssueFeatures{
+						StateReason:          true,
+						StateReasonDuplicate: false,
+					},
+				},
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "DUPLICATE-ID", "number": 99}
+            } } }`),
+				)
+			},
+			wantErr: true,
+			errMsg:  "closing as duplicate is not supported on github.com",
+		},
+		{
+			name: "duplicate of cannot point to same issue",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				DuplicateOf: "13",
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+			},
+			wantErr: true,
+			errMsg:  "`--duplicate-of` cannot reference the current issue",
+		},
+		{
+			name: "duplicate of must reference an issue",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				DuplicateOf: "99",
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "__typename": "PullRequest", "id": "PULL-ID", "number": 99}
+            } } }`),
+				)
+			},
+			wantErr: true,
+			errMsg:  "`--duplicate-of` must reference an issue",
+		},
+		{
+			name: "duplicate of with invalid format",
+			opts: &CloseOptions{
+				IssueNumber: 13,
+				DuplicateOf: "not-an-issue",
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`
+            { "data": { "repository": {
+              "hasIssuesEnabled": true,
+              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
+            } } }`),
+				)
+			},
+			wantErr: true,
+			errMsg:  "invalid value for `--duplicate-of`: invalid issue format: \"not-an-issue\"",
 		},
 		{
 			name: "close issue with reason when reason is not supported",

@@ -24,6 +24,7 @@ type CloseOptions struct {
 	IssueNumber int
 	Comment     string
 	Reason      string
+	DuplicateOf string
 
 	Detector fd.Detector
 }
@@ -55,6 +56,13 @@ func NewCmdClose(f *cmdutil.Factory, runF func(*CloseOptions) error) *cobra.Comm
 			}
 
 			opts.IssueNumber = issueNumber
+			if opts.DuplicateOf != "" {
+				if opts.Reason == "" {
+					opts.Reason = "duplicate"
+				} else if opts.Reason != "duplicate" {
+					return cmdutil.FlagErrorf("`--duplicate-of` can only be used with `--reason duplicate`")
+				}
+			}
 
 			if runF != nil {
 				return runF(opts)
@@ -64,13 +72,22 @@ func NewCmdClose(f *cmdutil.Factory, runF func(*CloseOptions) error) *cobra.Comm
 	}
 
 	cmd.Flags().StringVarP(&opts.Comment, "comment", "c", "", "Leave a closing comment")
-	cmdutil.StringEnumFlag(cmd, &opts.Reason, "reason", "r", "", []string{"completed", "not planned"}, "Reason for closing")
+	cmdutil.StringEnumFlag(cmd, &opts.Reason, "reason", "r", "", []string{"completed", "not planned", "duplicate"}, "Reason for closing")
+	cmd.Flags().StringVar(&opts.DuplicateOf, "duplicate-of", "", "Mark as duplicate of another issue by number or URL")
 
 	return cmd
 }
 
 func closeRun(opts *CloseOptions) error {
 	cs := opts.IO.ColorScheme()
+	closeReason := opts.Reason
+	if opts.DuplicateOf != "" {
+		if closeReason == "" {
+			closeReason = "duplicate"
+		} else if closeReason != "duplicate" {
+			return cmdutil.FlagErrorf("`--duplicate-of` can only be used with `--reason duplicate`")
+		}
+	}
 
 	httpClient, err := opts.HttpClient()
 	if err != nil {
@@ -92,6 +109,32 @@ func closeRun(opts *CloseOptions) error {
 		return nil
 	}
 
+	var duplicateIssueID string
+	if opts.DuplicateOf != "" {
+		if issue.IsPullRequest() {
+			return cmdutil.FlagErrorf("`--duplicate-of` is only supported for issues")
+		}
+		duplicateIssueNumber, duplicateRepo, err := shared.ParseIssueFromArg(opts.DuplicateOf)
+		if err != nil {
+			return cmdutil.FlagErrorf("invalid value for `--duplicate-of`: %v", err)
+		}
+		duplicateIssueRepo := baseRepo
+		if parsedRepo, present := duplicateRepo.Value(); present {
+			duplicateIssueRepo = parsedRepo
+		}
+		if ghrepo.IsSame(baseRepo, duplicateIssueRepo) && issue.Number == duplicateIssueNumber {
+			return cmdutil.FlagErrorf("`--duplicate-of` cannot reference the current issue")
+		}
+		duplicateIssue, err := shared.FindIssueOrPR(httpClient, duplicateIssueRepo, duplicateIssueNumber, []string{"id"})
+		if err != nil {
+			return err
+		}
+		if duplicateIssue.IsPullRequest() {
+			return cmdutil.FlagErrorf("`--duplicate-of` must reference an issue")
+		}
+		duplicateIssueID = duplicateIssue.ID
+	}
+
 	if opts.Comment != "" {
 		commentOpts := &prShared.CommentableOptions{
 			Body:       opts.Comment,
@@ -108,7 +151,7 @@ func closeRun(opts *CloseOptions) error {
 		}
 	}
 
-	err = apiClose(httpClient, baseRepo, issue, opts.Detector, opts.Reason)
+	err = apiClose(httpClient, baseRepo, issue, opts.Detector, closeReason, duplicateIssueID)
 	if err != nil {
 		return err
 	}
@@ -118,12 +161,12 @@ func closeRun(opts *CloseOptions) error {
 	return nil
 }
 
-func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, detector fd.Detector, reason string) error {
+func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, detector fd.Detector, reason string, duplicateIssueID string) error {
 	if issue.IsPullRequest() {
 		return api.PullRequestClose(httpClient, repo, issue.ID)
 	}
 
-	if reason != "" {
+	if reason != "" || duplicateIssueID != "" {
 		if detector == nil {
 			cachedClient := api.NewCachedHTTPClient(httpClient, time.Hour*24)
 			detector = fd.NewDetector(cachedClient, repo.RepoHost())
@@ -135,6 +178,15 @@ func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, 
 		// TODO stateReasonCleanup
 		if !features.StateReason {
 			// If StateReason is not supported silently close issue without setting StateReason.
+			if duplicateIssueID != "" {
+				return fmt.Errorf("closing as duplicate is not supported on %s", repo.RepoHost())
+			}
+			reason = ""
+		} else if reason == "duplicate" && !features.StateReasonDuplicate {
+			if duplicateIssueID != "" {
+				return fmt.Errorf("closing as duplicate is not supported on %s", repo.RepoHost())
+			}
+			// If DUPLICATE is not supported silently close issue without setting StateReason.
 			reason = ""
 		}
 	}
@@ -144,6 +196,8 @@ func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, 
 		// If no reason is specified do not set it.
 	case "not planned":
 		reason = "NOT_PLANNED"
+	case "duplicate":
+		reason = "DUPLICATE"
 	default:
 		reason = "COMPLETED"
 	}
@@ -158,8 +212,9 @@ func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, 
 
 	variables := map[string]interface{}{
 		"input": CloseIssueInput{
-			IssueID:     issue.ID,
-			StateReason: reason,
+			IssueID:          issue.ID,
+			StateReason:      reason,
+			DuplicateIssueID: duplicateIssueID,
 		},
 	}
 
@@ -168,6 +223,7 @@ func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, 
 }
 
 type CloseIssueInput struct {
-	IssueID     string `json:"issueId"`
-	StateReason string `json:"stateReason,omitempty"`
+	IssueID          string `json:"issueId"`
+	StateReason      string `json:"stateReason,omitempty"`
+	DuplicateIssueID string `json:"duplicateIssueId,omitempty"`
 }

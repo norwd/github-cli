@@ -74,7 +74,7 @@ endif
 ## Install/uninstall tasks are here for use on *nix platform. On Windows, there is no equivalent.
 
 DESTDIR :=
-prefix  := /usr/local
+prefix  ?= /usr/local
 bindir  := ${prefix}/bin
 datadir := ${prefix}/share
 mandir  := ${datadir}/man
