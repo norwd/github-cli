@@ -3,11 +3,9 @@ package close
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/cli/cli/v2/api"
-	fd "github.com/cli/cli/v2/internal/featuredetection"
 	"github.com/cli/cli/v2/internal/ghrepo"
 	"github.com/cli/cli/v2/pkg/cmd/issue/shared"
 	prShared "github.com/cli/cli/v2/pkg/cmd/pr/shared"
@@ -26,8 +24,6 @@ type CloseOptions struct {
 	Comment     string
 	Reason      string
 	DuplicateOf string
-
-	Detector fd.Detector
 }
 
 func NewCmdClose(f *cmdutil.Factory, runF func(*CloseOptions) error) *cobra.Command {
@@ -165,7 +161,7 @@ func closeRun(opts *CloseOptions) error {
 		}
 	}
 
-	err = apiClose(httpClient, baseRepo, issue, opts.Detector, closeReason, duplicateIssueID)
+	err = apiClose(httpClient, baseRepo, issue, closeReason, duplicateIssueID)
 	if err != nil {
 		return err
 	}
@@ -175,34 +171,9 @@ func closeRun(opts *CloseOptions) error {
 	return nil
 }
 
-func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, detector fd.Detector, reason string, duplicateIssueID string) error {
+func apiClose(httpClient *http.Client, repo ghrepo.Interface, issue *api.Issue, reason string, duplicateIssueID string) error {
 	if issue.IsPullRequest() {
 		return api.PullRequestClose(httpClient, repo, issue.ID)
-	}
-
-	if reason != "" || duplicateIssueID != "" {
-		if detector == nil {
-			cachedClient := api.NewCachedHTTPClient(httpClient, time.Hour*24)
-			detector = fd.NewDetector(cachedClient, repo.RepoHost())
-		}
-		features, err := detector.IssueFeatures()
-		if err != nil {
-			return err
-		}
-		// TODO stateReasonCleanup
-		if !features.StateReason {
-			// If StateReason is not supported silently close issue without setting StateReason.
-			if duplicateIssueID != "" {
-				return fmt.Errorf("closing as duplicate is not supported on %s", repo.RepoHost())
-			}
-			reason = ""
-		} else if reason == "duplicate" && !features.StateReasonDuplicate {
-			if duplicateIssueID != "" {
-				return fmt.Errorf("closing as duplicate is not supported on %s", repo.RepoHost())
-			}
-			// If DUPLICATE is not supported silently close issue without setting StateReason.
-			reason = ""
-		}
 	}
 
 	switch reason {

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"testing"
 
-	fd "github.com/cli/cli/v2/internal/featuredetection"
 	"github.com/cli/cli/v2/internal/ghrepo"
 	"github.com/cli/cli/v2/pkg/cmd/issue/argparsetest"
 	"github.com/cli/cli/v2/pkg/cmdutil"
@@ -15,15 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type issueFeaturesDetectorMock struct {
-	fd.EnabledDetectorMock
-	issueFeatures fd.IssueFeatures
-}
-
-func (md *issueFeaturesDetectorMock) IssueFeatures() (fd.IssueFeatures, error) {
-	return md.issueFeatures, nil
-}
 
 func TestNewCmdClose(t *testing.T) {
 	// Test shared parsing of issue number / URL.
@@ -194,7 +184,6 @@ func TestCloseRun(t *testing.T) {
 			opts: &CloseOptions{
 				IssueNumber: 13,
 				Reason:      "not planned",
-				Detector:    &fd.EnabledDetectorMock{},
 			},
 			httpStubs: func(reg *httpmock.Registry) {
 				reg.Register(
@@ -222,7 +211,6 @@ func TestCloseRun(t *testing.T) {
 			opts: &CloseOptions{
 				IssueNumber: 13,
 				Reason:      "duplicate",
-				Detector:    &fd.EnabledDetectorMock{},
 			},
 			httpStubs: func(reg *httpmock.Registry) {
 				reg.Register(
@@ -250,7 +238,6 @@ func TestCloseRun(t *testing.T) {
 			opts: &CloseOptions{
 				IssueNumber: 13,
 				DuplicateOf: "99",
-				Detector:    &fd.EnabledDetectorMock{},
 			},
 			httpStubs: func(reg *httpmock.Registry) {
 				reg.Register(
@@ -281,71 +268,6 @@ func TestCloseRun(t *testing.T) {
 				)
 			},
 			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
-		},
-		{
-			name: "close issue with duplicate reason when duplicate is not supported",
-			opts: &CloseOptions{
-				IssueNumber: 13,
-				Reason:      "duplicate",
-				Detector: &issueFeaturesDetectorMock{
-					issueFeatures: fd.IssueFeatures{
-						StateReason:          true,
-						StateReasonDuplicate: false,
-					},
-				},
-			},
-			httpStubs: func(reg *httpmock.Registry) {
-				reg.Register(
-					httpmock.GraphQL(`query IssueByNumber\b`),
-					httpmock.StringResponse(`
-            { "data": { "repository": {
-              "hasIssuesEnabled": true,
-              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
-            } } }`),
-				)
-				reg.Register(
-					httpmock.GraphQL(`mutation IssueClose\b`),
-					httpmock.GraphQLMutation(`{"id": "THE-ID"}`,
-						func(inputs map[string]interface{}) {
-							assert.Equal(t, 1, len(inputs))
-							assert.Equal(t, "THE-ID", inputs["issueId"])
-						}),
-				)
-			},
-			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
-		},
-		{
-			name: "close issue as duplicate when duplicate is not supported",
-			opts: &CloseOptions{
-				IssueNumber: 13,
-				DuplicateOf: "99",
-				Detector: &issueFeaturesDetectorMock{
-					issueFeatures: fd.IssueFeatures{
-						StateReason:          true,
-						StateReasonDuplicate: false,
-					},
-				},
-			},
-			httpStubs: func(reg *httpmock.Registry) {
-				reg.Register(
-					httpmock.GraphQL(`query IssueByNumber\b`),
-					httpmock.StringResponse(`
-            { "data": { "repository": {
-              "hasIssuesEnabled": true,
-              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
-            } } }`),
-				)
-				reg.Register(
-					httpmock.GraphQL(`query IssueByNumber\b`),
-					httpmock.StringResponse(`
-            { "data": { "repository": {
-              "hasIssuesEnabled": true,
-              "issue": { "id": "DUPLICATE-ID", "number": 99}
-            } } }`),
-				)
-			},
-			wantErr: true,
-			errMsg:  "closing as duplicate is not supported on github.com",
 		},
 		{
 			name: "duplicate of cannot point to same issue",
@@ -411,33 +333,6 @@ func TestCloseRun(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "invalid value for `--duplicate-of`: invalid issue format: \"not-an-issue\"",
-		},
-		{
-			name: "close issue with reason when reason is not supported",
-			opts: &CloseOptions{
-				IssueNumber: 13,
-				Reason:      "not planned",
-				Detector:    &fd.DisabledDetectorMock{},
-			},
-			httpStubs: func(reg *httpmock.Registry) {
-				reg.Register(
-					httpmock.GraphQL(`query IssueByNumber\b`),
-					httpmock.StringResponse(`
-            { "data": { "repository": {
-              "hasIssuesEnabled": true,
-              "issue": { "id": "THE-ID", "number": 13, "title": "The title of the issue"}
-            } } }`),
-				)
-				reg.Register(
-					httpmock.GraphQL(`mutation IssueClose\b`),
-					httpmock.GraphQLMutation(`{"id": "THE-ID"}`,
-						func(inputs map[string]interface{}) {
-							assert.Equal(t, 1, len(inputs))
-							assert.Equal(t, "THE-ID", inputs["issueId"])
-						}),
-				)
-			},
-			wantStderr: "✓ Closed issue OWNER/REPO#13 (The title of the issue)\n",
 		},
 		{
 			name: "issue already closed",

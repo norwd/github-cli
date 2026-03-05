@@ -23,15 +23,11 @@ type Detector interface {
 }
 
 type IssueFeatures struct {
-	StateReason          bool
-	StateReasonDuplicate bool
-	ActorIsAssignable    bool
+	ActorIsAssignable bool
 }
 
 var allIssueFeatures = IssueFeatures{
-	StateReason:          true,
-	StateReasonDuplicate: true,
-	ActorIsAssignable:    true,
+	ActorIsAssignable: true,
 }
 
 type PullRequestFeatures struct {
@@ -139,47 +135,9 @@ func (d *detector) IssueFeatures() (IssueFeatures, error) {
 		return allIssueFeatures, nil
 	}
 
-	features := IssueFeatures{
-		StateReason:          false,
-		StateReasonDuplicate: false,
-		ActorIsAssignable:    false, // replaceActorsForAssignable GraphQL mutation unavailable on GHES
-	}
-
-	var featureDetection struct {
-		Issue struct {
-			Fields []struct {
-				Name string
-			} `graphql:"fields(includeDeprecated: true)"`
-		} `graphql:"Issue: __type(name: \"Issue\")"`
-		IssueClosedStateReason struct {
-			EnumValues []struct {
-				Name string
-			} `graphql:"enumValues(includeDeprecated: true)"`
-		} `graphql:"IssueClosedStateReason: __type(name: \"IssueClosedStateReason\")"`
-	}
-
-	gql := api.NewClientFromHTTP(d.httpClient)
-	err := gql.Query(d.host, "Issue_fields", &featureDetection, nil)
-	if err != nil {
-		return features, err
-	}
-
-	for _, field := range featureDetection.Issue.Fields {
-		if field.Name == "stateReason" {
-			features.StateReason = true
-		}
-	}
-
-	if features.StateReason {
-		for _, enumValue := range featureDetection.IssueClosedStateReason.EnumValues {
-			if enumValue.Name == "DUPLICATE" {
-				features.StateReasonDuplicate = true
-				break
-			}
-		}
-	}
-
-	return features, nil
+	return IssueFeatures{
+		ActorIsAssignable: false, // replaceActorsForAssignable GraphQL mutation unavailable on GHES
+	}, nil
 }
 
 func (d *detector) PullRequestFeatures() (PullRequestFeatures, error) {

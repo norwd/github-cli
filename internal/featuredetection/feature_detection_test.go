@@ -23,9 +23,7 @@ func TestIssueFeatures(t *testing.T) {
 			name:     "github.com",
 			hostname: "github.com",
 			wantFeatures: IssueFeatures{
-				StateReason:          true,
-				StateReasonDuplicate: true,
-				ActorIsAssignable:    true,
+				ActorIsAssignable: true,
 			},
 			wantErr: false,
 		},
@@ -33,63 +31,15 @@ func TestIssueFeatures(t *testing.T) {
 			name:     "ghec data residency (ghe.com)",
 			hostname: "stampname.ghe.com",
 			wantFeatures: IssueFeatures{
-				StateReason:          true,
-				StateReasonDuplicate: true,
-				ActorIsAssignable:    true,
+				ActorIsAssignable: true,
 			},
 			wantErr: false,
 		},
 		{
-			name:     "GHE empty response",
+			name:     "GHE",
 			hostname: "git.my.org",
-			queryResponse: map[string]string{
-				`query Issue_fields\b`: `{"data": {}}`,
-			},
 			wantFeatures: IssueFeatures{
-				StateReason:          false,
-				StateReasonDuplicate: false,
-				ActorIsAssignable:    false,
-			},
-			wantErr: false,
-		},
-		{
-			name:     "GHE has state reason field without duplicate enum",
-			hostname: "git.my.org",
-			queryResponse: map[string]string{
-				`query Issue_fields\b`: heredoc.Doc(`
-					{ "data": { "Issue": { "fields": [
-						{"name": "stateReason"}
-					] }, "IssueClosedStateReason": { "enumValues": [
-						{"name": "COMPLETED"},
-						{"name": "NOT_PLANNED"}
-					] } } }
-				`),
-			},
-			wantFeatures: IssueFeatures{
-				StateReason:          true,
-				StateReasonDuplicate: false,
-				ActorIsAssignable:    false,
-			},
-			wantErr: false,
-		},
-		{
-			name:     "GHE has duplicate state reason enum value",
-			hostname: "git.my.org",
-			queryResponse: map[string]string{
-				`query Issue_fields\b`: heredoc.Doc(`
-					{ "data": { "Issue": { "fields": [
-						{"name": "stateReason"}
-					] }, "IssueClosedStateReason": { "enumValues": [
-						{"name": "COMPLETED"},
-						{"name": "NOT_PLANNED"},
-						{"name": "DUPLICATE"}
-					] } } }
-				`),
-			},
-			wantFeatures: IssueFeatures{
-				StateReason:          true,
-				StateReasonDuplicate: true,
-				ActorIsAssignable:    false,
+				ActorIsAssignable: false,
 			},
 			wantErr: false,
 		},
