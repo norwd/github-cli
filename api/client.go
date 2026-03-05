@@ -203,7 +203,6 @@ func GenerateScopeErrorForGQL(gqlErr *ghAPI.GraphQLError) error {
 	}
 	if missing.Len() > 0 {
 		s := missing.ToSlice()
-		// TODO: this duplicates parts of generateScopesSuggestion
 		return fmt.Errorf(
 			"error: your authentication token is missing required scopes %v\n"+
 				"To request it, run:  gh auth refresh -s %s",
