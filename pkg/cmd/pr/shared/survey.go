@@ -154,7 +154,7 @@ type RepoMetadataFetcher interface {
 	RepoMetadataFetch(api.RepoMetadataInput) (*api.RepoMetadataResult, error)
 }
 
-func MetadataSurvey(p Prompt, io *iostreams.IOStreams, baseRepo ghrepo.Interface, fetcher RepoMetadataFetcher, state *IssueMetadataState, projectsV1Support gh.ProjectsV1Support) error {
+func MetadataSurvey(p Prompt, io *iostreams.IOStreams, baseRepo ghrepo.Interface, fetcher RepoMetadataFetcher, state *IssueMetadataState, projectsV1Support gh.ProjectsV1Support, reviewerSearchFunc func(string) prompter.MultiSelectSearchResult) error {
 	isChosen := func(m string) bool {
 		for _, c := range state.Metadata {
 			if m == c {
@@ -180,10 +180,13 @@ func MetadataSurvey(p Prompt, io *iostreams.IOStreams, baseRepo ghrepo.Interface
 		state.Metadata = append(state.Metadata, extraFieldsOptions[i])
 	}
 
-	// Retrieve and process data for survey prompts based on the extra fields selected
+	// Retrieve and process data for survey prompts based on the extra fields selected.
+	// When search-based reviewer selection is available, skip the expensive assignable-users
+	// and teams fetch since reviewers are found dynamically via the search function.
+	useReviewerSearch := state.ActorReviewers && reviewerSearchFunc != nil
 	metadataInput := api.RepoMetadataInput{
-		Reviewers:      isChosen("Reviewers"),
-		TeamReviewers:  isChosen("Reviewers"),
+		Reviewers:      isChosen("Reviewers") && !useReviewerSearch,
+		TeamReviewers:  isChosen("Reviewers") && !useReviewerSearch,
 		Assignees:      isChosen("Assignees"),
 		ActorAssignees: isChosen("Assignees") && state.ActorAssignees,
 		Labels:         isChosen("Labels"),
@@ -197,13 +200,15 @@ func MetadataSurvey(p Prompt, io *iostreams.IOStreams, baseRepo ghrepo.Interface
 	}
 
 	var reviewers []string
-	for _, u := range metadataResult.AssignableUsers {
-		if u.Login() != metadataResult.CurrentLogin {
-			reviewers = append(reviewers, u.DisplayName())
+	if !useReviewerSearch {
+		for _, u := range metadataResult.AssignableUsers {
+			if u.Login() != metadataResult.CurrentLogin {
+				reviewers = append(reviewers, u.DisplayName())
+			}
 		}
-	}
-	for _, t := range metadataResult.Teams {
-		reviewers = append(reviewers, fmt.Sprintf("%s/%s", baseRepo.RepoOwner(), t.Slug))
+		for _, t := range metadataResult.Teams {
+			reviewers = append(reviewers, fmt.Sprintf("%s/%s", baseRepo.RepoOwner(), t.Slug))
+		}
 	}
 
 	// Populate the list of selectable assignees and their default selections.
@@ -254,7 +259,21 @@ func MetadataSurvey(p Prompt, io *iostreams.IOStreams, baseRepo ghrepo.Interface
 	}{}
 
 	if isChosen("Reviewers") {
-		if len(reviewers) > 0 {
+		if reviewerSearchFunc != nil {
+			selectedReviewers, err := p.MultiSelectWithSearch(
+				"Reviewers",
+				"Search reviewers",
+				state.Reviewers,
+				[]string{},
+				reviewerSearchFunc)
+			if err != nil {
+				return err
+			}
+			values.Reviewers = selectedReviewers
+		} else if len(reviewers) > 0 {
+			// TODO requestReviewsByLoginCleanup
+			// The static MultiSelect path can be removed once GHES supports
+			// requestReviewsByLogin and search-based selection is always used.
 			selected, err := p.MultiSelect("Reviewers", state.Reviewers, reviewers)
 			if err != nil {
 				return err

@@ -317,7 +317,7 @@ func EditFieldsSurvey(p EditPrompter, editable *Editable, editorCommand string) 
 			editable.Reviewers.Value, err = p.MultiSelectWithSearch(
 				"Reviewers",
 				"Search reviewers",
-				editable.Reviewers.Default,
+				editable.Reviewers.DefaultLogins,
 				// No persistent options - teams are included in search results
 				[]string{},
 				editable.ReviewerSearchFunc)
