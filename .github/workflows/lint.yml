@@ -77,7 +77,7 @@ jobs:
       # `govulncheck` exits unsuccessfully if vulnerabilities are found, providing results in stdout.
       # See https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck#hdr-Exit_codes for more information on exit codes.
       #
-      # On go1.25, To make `-mode binary` work we need to make sure the binary is built with `go build -buildvcs=false`
+      # On go1.25+, To make `-mode binary` work we need to make sure the binary is built with `go build -buildvcs=false`
       # Since our builds do not use `-buildvcs=false`, we run in source mode here instead.
       - name: Check Go vulnerabilities
         run: |

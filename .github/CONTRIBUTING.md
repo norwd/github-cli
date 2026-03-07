@@ -24,7 +24,7 @@ We accept pull requests for issues labelled `help wanted`. We encourage issues a
 ## Building the project
 
 Prerequisites:
-- Go 1.25+
+- Go 1.26+
 
 Build with:
 * Unix-like systems: `make`
