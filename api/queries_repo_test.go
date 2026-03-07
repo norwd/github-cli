@@ -563,6 +563,31 @@ func TestDisplayName(t *testing.T) {
 	}
 }
 
+func TestActorDisplayName(t *testing.T) {
+	tests := []struct {
+		name     string
+		typeName string
+		login    string
+		actName  string
+		want     string
+	}{
+		{name: "copilot reviewer", typeName: "Bot", login: "copilot-pull-request-reviewer", want: "Copilot (AI)"},
+		{name: "copilot assignee", typeName: "Bot", login: "copilot-swe-agent", want: "Copilot (AI)"},
+		{name: "copilot without typename", typeName: "", login: "copilot-pull-request-reviewer", want: "Copilot (AI)"},
+		{name: "copilot actor name login", typeName: "", login: "Copilot", want: "Copilot (AI)"},
+		{name: "regular bot", typeName: "Bot", login: "dependabot", want: "dependabot"},
+		{name: "user with name", typeName: "User", login: "octocat", actName: "Mona Lisa", want: "octocat (Mona Lisa)"},
+		{name: "user without name", typeName: "User", login: "octocat", want: "octocat"},
+		{name: "unknown type with name", typeName: "", login: "octocat", actName: "Mona Lisa", want: "octocat (Mona Lisa)"},
+		{name: "empty login", typeName: "", login: "", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, actorDisplayName(tt.typeName, tt.login, tt.actName))
+		})
+	}
+}
+
 func TestRepoExists(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -234,6 +234,11 @@ type Author struct {
 	Login string
 }
 
+// DisplayName returns a user-friendly name via actorDisplayName.
+func (a Author) DisplayName() string {
+	return actorDisplayName("", a.Login, a.Name)
+}
+
 func (author Author) MarshalJSON() ([]byte, error) {
 	if author.ID == "" {
 		return json.Marshal(map[string]interface{}{
@@ -258,6 +263,11 @@ type CommentAuthor struct {
 	//		ID   string
 	//		Name string
 	//	} `graphql:"... on User"`
+}
+
+// DisplayName returns a user-friendly name via actorDisplayName.
+func (a CommentAuthor) DisplayName() string {
+	return actorDisplayName("", a.Login, "")
 }
 
 // IssueCreate creates an issue in a GitHub repository

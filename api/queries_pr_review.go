@@ -52,7 +52,7 @@ func (prr PullRequestReview) Identifier() string {
 }
 
 func (prr PullRequestReview) AuthorLogin() string {
-	return prr.Author.Login
+	return prr.Author.DisplayName()
 }
 
 func (prr PullRequestReview) Association() string {
@@ -143,6 +143,7 @@ type RequestedReviewer struct {
 
 const teamTypeName = "Team"
 const botTypeName = "Bot"
+const userTypeName = "User"
 
 func (r RequestedReviewer) LoginOrSlug() string {
 	if r.TypeName == teamTypeName {
@@ -151,20 +152,13 @@ func (r RequestedReviewer) LoginOrSlug() string {
 	return r.Login
 }
 
-// DisplayName returns a user-friendly name for the reviewer.
-// For Copilot bot, returns "Copilot (AI)". For teams, returns "org/slug".
-// For users, returns "login (Name)" if name is available, otherwise just login.
+// DisplayName returns a user-friendly name for the reviewer via actorDisplayName.
+// Teams are handled separately as "org/slug".
 func (r RequestedReviewer) DisplayName() string {
 	if r.TypeName == teamTypeName {
 		return fmt.Sprintf("%s/%s", r.Organization.Login, r.Slug)
 	}
-	if r.TypeName == botTypeName && r.Login == CopilotReviewerLogin {
-		return "Copilot (AI)"
-	}
-	if r.Name != "" {
-		return fmt.Sprintf("%s (%s)", r.Login, r.Name)
-	}
-	return r.Login
+	return actorDisplayName(r.TypeName, r.Login, r.Name)
 }
 
 func (r ReviewRequests) Logins() []string {
@@ -221,10 +215,7 @@ func NewReviewerBot(login string) ReviewerBot {
 }
 
 func (b ReviewerBot) DisplayName() string {
-	if b.login == CopilotReviewerLogin {
-		return fmt.Sprintf("%s (AI)", CopilotActorName)
-	}
-	return b.Login()
+	return actorDisplayName("Bot", b.login, "")
 }
 
 func (r ReviewerBot) sealedReviewerCandidate() {}

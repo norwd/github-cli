@@ -147,6 +147,11 @@ type GitHubUser struct {
 	DatabaseID int64  `json:"databaseId"`
 }
 
+// DisplayName returns a user-friendly name via actorDisplayName.
+func (u GitHubUser) DisplayName() string {
+	return actorDisplayName("", u.Login, u.Name)
+}
+
 // Actor is a superset of User and Bot, among others.
 // At the time of writing, some of these fields
 // are not directly supported by the Actor type and
@@ -1087,6 +1092,24 @@ const CopilotAssigneeLogin = "copilot-swe-agent"
 const CopilotReviewerLogin = "copilot-pull-request-reviewer"
 const CopilotActorName = "Copilot"
 
+// actorDisplayName returns a user-friendly display name for any actor.
+// It handles bots (e.g. Copilot → "Copilot (AI)"), users with names
+// ("login (Name)"), and falls back to just login. Empty typeName is
+// treated as a possible bot or user — the login is checked against
+// known bot logins first.
+func actorDisplayName(typeName, login, name string) string {
+	if login == CopilotReviewerLogin || login == CopilotAssigneeLogin || login == CopilotActorName {
+		return fmt.Sprintf("%s (AI)", CopilotActorName)
+	}
+	if typeName == botTypeName {
+		return login
+	}
+	if name != "" {
+		return fmt.Sprintf("%s (%s)", login, name)
+	}
+	return login
+}
+
 type AssignableActor interface {
 	DisplayName() string
 	ID() string
@@ -1110,12 +1133,9 @@ func NewAssignableUser(id, login, name string) AssignableUser {
 	}
 }
 
-// DisplayName returns a formatted string that uses Login and Name to be displayed e.g. 'Login (Name)' or 'Login'
+// DisplayName returns a user-friendly name via actorDisplayName.
 func (u AssignableUser) DisplayName() string {
-	if u.name != "" {
-		return fmt.Sprintf("%s (%s)", u.login, u.name)
-	}
-	return u.login
+	return actorDisplayName(userTypeName, u.login, u.name)
 }
 
 func (u AssignableUser) ID() string {
@@ -1145,10 +1165,7 @@ func NewAssignableBot(id, login string) AssignableBot {
 }
 
 func (b AssignableBot) DisplayName() string {
-	if b.login == CopilotAssigneeLogin {
-		return fmt.Sprintf("%s (AI)", CopilotActorName)
-	}
-	return b.Login()
+	return actorDisplayName(botTypeName, b.login, "")
 }
 
 func (b AssignableBot) ID() string {
