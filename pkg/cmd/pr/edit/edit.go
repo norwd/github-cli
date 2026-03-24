@@ -74,12 +74,31 @@ func NewCmdEdit(f *cmdutil.Factory, runF func(*EditOptions) error) *cobra.Comman
 			- %[1]s@copilot%[1]s: request or remove review from Copilot (not supported on GitHub Enterprise Server)
 		`, "`"),
 		Example: heredoc.Doc(`
+			# Edit the title and body of a pull request
 			$ gh pr edit 23 --title "I found a bug" --body "Nothing works"
+
+			# Use a file as the body
+			$ gh pr edit 23 --body-file body.txt
+
+			# Manage labels
 			$ gh pr edit 23 --add-label "bug,help wanted" --remove-label "core"
-			$ gh pr edit 23 --add-reviewer monalisa,hubot  --remove-reviewer myorg/team-name
+
+			# Manage reviewers
+			$ gh pr edit 23 --add-reviewer monalisa,hubot --remove-reviewer myorg/team-name
+
+			# Re-request review
+			$ gh pr edit 23 --add-reviewer monalisa
+
+			# Request a review from GitHub Copilot
 			$ gh pr edit 23 --add-reviewer "@copilot"
+
+			# Manage assignees
 			$ gh pr edit 23 --add-assignee "@me" --remove-assignee monalisa,hubot
+
+			# Assign GitHub Copilot
 			$ gh pr edit 23 --add-assignee "@copilot"
+
+			# Manage projects and milestones
 			$ gh pr edit 23 --add-project "Roadmap" --remove-project v1,v2
 			$ gh pr edit 23 --milestone "Version 1"
 			$ gh pr edit 23 --remove-milestone
@@ -190,7 +209,7 @@ func NewCmdEdit(f *cmdutil.Factory, runF func(*EditOptions) error) *cobra.Comman
 	cmd.Flags().StringVarP(&opts.Editable.Body.Value, "body", "b", "", "Set the new body.")
 	cmd.Flags().StringVarP(&bodyFile, "body-file", "F", "", "Read body text from `file` (use \"-\" to read from standard input)")
 	cmd.Flags().StringVarP(&opts.Editable.Base.Value, "base", "B", "", "Change the base `branch` for this pull request")
-	cmd.Flags().StringSliceVar(&opts.Editable.Reviewers.Add, "add-reviewer", nil, "Add reviewers by their `login`. Use \"@copilot\" to request review from Copilot.")
+	cmd.Flags().StringSliceVar(&opts.Editable.Reviewers.Add, "add-reviewer", nil, "Add or re-request reviewers by their `login`. Use \"@copilot\" to request review from Copilot.")
 	cmd.Flags().StringSliceVar(&opts.Editable.Reviewers.Remove, "remove-reviewer", nil, "Remove reviewers by their `login`. Use \"@copilot\" to remove review request from Copilot.")
 	cmd.Flags().StringSliceVar(&opts.Editable.Assignees.Add, "add-assignee", nil, "Add assigned users by their `login`. Use \"@me\" to assign yourself, or \"@copilot\" to assign Copilot.")
 	cmd.Flags().StringSliceVar(&opts.Editable.Assignees.Remove, "remove-assignee", nil, "Remove assigned users by their `login`. Use \"@me\" to unassign yourself, or \"@copilot\" to unassign Copilot.")
