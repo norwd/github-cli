@@ -311,7 +311,7 @@ func IssueCreate(client *Client, repo *Repository, params map[string]interface{}
 	}
 	issue := &result.CreateIssue.Issue
 
-	// Assign users using login-based mutation when ActorAssignees is true (github.com).
+	// Assign users using login-based mutation when ApiActorsSupported is true (github.com).
 	if assigneeLogins, ok := params["assigneeLogins"].([]string); ok && len(assigneeLogins) > 0 {
 		err := ReplaceActorsForAssignableByLogin(client, repo, issue.ID, assigneeLogins)
 		if err != nil {

@@ -66,7 +66,8 @@ func UpdateIssue(httpClient *http.Client, repo ghrepo.Interface, id string, isPR
 			// other issue fields to ensure consistency with how legacy
 			// user assignees are handled.
 			// https://github.com/cli/cli/pull/10960#discussion_r2086725348
-			if options.Assignees.Edited && options.Assignees.ActorAssignees {
+			// TODO ApiActorsSupported
+			if options.Assignees.Edited && options.ApiActorsSupported {
 				apiClient := api.NewClientFromHTTP(httpClient)
 				logins, err := options.AssigneeLogins(apiClient, repo)
 				if err != nil {
@@ -99,7 +100,8 @@ func replaceIssueFields(httpClient *http.Client, repo ghrepo.Interface, id strin
 	}
 
 	var assigneeIds *[]string
-	if !options.Assignees.ActorAssignees {
+	// TODO ApiActorsSupported
+	if !options.ApiActorsSupported {
 		assigneeIds, err = options.AssigneeIds(apiClient, repo)
 		if err != nil {
 			return err

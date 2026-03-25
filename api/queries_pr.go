@@ -524,7 +524,7 @@ func CreatePullRequest(client *Client, repo *Repository, params map[string]inter
 		}
 	}
 
-	// Assign users using login-based mutation when ActorAssignees is true (github.com).
+	// Assign users using login-based mutation when ApiActorsSupported is true (github.com).
 	if assigneeLogins, ok := params["assigneeLogins"].([]string); ok && len(assigneeLogins) > 0 {
 		err := ReplaceActorsForAssignableByLogin(client, repo, pr.ID, assigneeLogins)
 		if err != nil {
@@ -532,7 +532,7 @@ func CreatePullRequest(client *Client, repo *Repository, params map[string]inter
 		}
 	}
 
-	// TODO requestReviewsByLoginCleanup
+	// TODO ApiActorsSupported
 	// Request reviewers using either login-based (github.com) or ID-based (GHES) mutation.
 	// The ID-based path can be removed once GHES supports requestReviewsByLogin.
 	userLogins, hasUserLogins := params["userReviewerLogins"].([]string)
@@ -599,6 +599,12 @@ func ReplaceActorsForAssignableByLogin(client *Client, repo ghrepo.Interface, as
 
 	actorLogins := make([]githubv4.String, len(logins))
 	for i, l := range logins {
+		// The replaceActorsForAssignable mutation requires the [bot] suffix
+		// for bot actor logins (e.g. "copilot-swe-agent[bot]"), unlike
+		// requestReviewsByLogin which has a separate botLogins field.
+		if l == CopilotAssigneeLogin {
+			l = l + "[bot]"
+		}
 		actorLogins[i] = githubv4.String(l)
 	}
 

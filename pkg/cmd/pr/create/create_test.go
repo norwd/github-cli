@@ -965,7 +965,7 @@ func Test_createRun(t *testing.T) {
 				`, func(inputs map[string]interface{}) {
 						assert.Equal(t, "NEWPULLID", inputs["pullRequestId"])
 						if _, ok := inputs["assigneeIds"]; ok {
-							t.Error("did not expect assigneeIds in updatePullRequest when ActorAssignees is true")
+							t.Error("did not expect assigneeIds in updatePullRequest when ApiActorsSupported is true")
 						}
 						assert.Equal(t, []interface{}{"BUGID", "TODOID"}, inputs["labelIds"])
 						assert.Equal(t, []interface{}{"ROADMAPID"}, inputs["projectIds"])

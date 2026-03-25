@@ -22,6 +22,13 @@ type Editable struct {
 	Projects           EditableProjects
 	Milestone          EditableString
 	Metadata           api.RepoMetadataResult
+
+	// TODO ApiActorsSupported
+	// ApiActorsSupported indicates the host supports actor-based APIs (github.com, ghe.com).
+	// When true, mutations use logins directly instead of resolving node IDs.
+	// Remove this flag (and collapse to actor-only paths) once GHES supports
+	// replaceActorsForAssignable and requestReviewsByLogin mutations.
+	ApiActorsSupported bool
 }
 
 type EditableString struct {
@@ -42,11 +49,9 @@ type EditableSlice struct {
 }
 
 // EditableAssignees is a special case of EditableSlice.
-// It contains a flag to indicate whether the assignees are actors or not.
 type EditableAssignees struct {
 	EditableSlice
-	ActorAssignees bool
-	DefaultLogins  []string // For disambiguating actors from display names
+	DefaultLogins []string // For disambiguating actors from display names
 }
 
 // EditableReviewers is a special case of EditableSlice.
@@ -95,7 +100,8 @@ func (e Editable) AssigneeIds(client *api.Client, repo ghrepo.Interface) (*[]str
 	// If assignees came in from command line flags, we need to
 	// curate the final list of assignees from the default list.
 	if len(e.Assignees.Add) != 0 || len(e.Assignees.Remove) != 0 {
-		replacer := NewSpecialAssigneeReplacer(client, repo.RepoHost(), e.Assignees.ActorAssignees, true)
+		// TODO ApiActorsSupported
+		replacer := NewSpecialAssigneeReplacer(client, repo.RepoHost(), e.ApiActorsSupported, true)
 
 		assigneeSet := set.NewStringSet()
 
@@ -107,7 +113,8 @@ func (e Editable) AssigneeIds(client *api.Client, repo ghrepo.Interface) (*[]str
 		// So, we need to add the default logins here instead of the DisplayNames.
 		// Otherwise, the value the user provided won't be found in the
 		// set to be added or removed, causing unexpected behavior.
-		if e.Assignees.ActorAssignees {
+		// TODO ApiActorsSupported
+		if e.ApiActorsSupported {
 			assigneeSet.AddValues(e.Assignees.DefaultLogins)
 		} else {
 			assigneeSet.AddValues(e.Assignees.Default)
@@ -283,6 +290,7 @@ func (e *Editable) Clone() Editable {
 		Labels:             e.Labels.clone(),
 		Projects:           e.Projects.clone(),
 		Milestone:          e.Milestone.clone(),
+		ApiActorsSupported: e.ApiActorsSupported,
 		// Shallow copy since no mutation.
 		Metadata: e.Metadata,
 	}
@@ -319,9 +327,8 @@ func (es *EditableSlice) clone() EditableSlice {
 
 func (ea *EditableAssignees) clone() EditableAssignees {
 	return EditableAssignees{
-		EditableSlice:  ea.EditableSlice.clone(),
-		ActorAssignees: ea.ActorAssignees,
-		DefaultLogins:  ea.DefaultLogins,
+		EditableSlice: ea.EditableSlice.clone(),
+		DefaultLogins: ea.DefaultLogins,
 	}
 }
 
@@ -522,22 +529,23 @@ func FetchOptions(client *api.Client, repo ghrepo.Interface, editable *Editable,
 			fetchAssignees = true
 		}
 		// For non-interactive Add/Remove operations, we only need to fetch assignees
-		// on GHES where ID resolution is required. On github.com (ActorAssignees),
+		// on GHES where ID resolution is required. On github.com (ApiActorsSupported),
 		// logins are passed directly to the mutation.
-		if (len(editable.Assignees.Add) > 0 || len(editable.Assignees.Remove) > 0) && !editable.Assignees.ActorAssignees {
+		// TODO ApiActorsSupported
+		if (len(editable.Assignees.Add) > 0 || len(editable.Assignees.Remove) > 0) && !editable.ApiActorsSupported {
 			fetchAssignees = true
 		}
 	}
 
 	input := api.RepoMetadataInput{
-		Reviewers:      fetchReviewers,
-		TeamReviewers:  teamReviewers,
-		Assignees:      fetchAssignees,
-		ActorAssignees: editable.Assignees.ActorAssignees,
-		Labels:         editable.Labels.Edited,
-		ProjectsV1:     editable.Projects.Edited && projectV1Support == gh.ProjectsV1Supported,
-		ProjectsV2:     editable.Projects.Edited,
-		Milestones:     editable.Milestone.Edited,
+		Reviewers:          fetchReviewers,
+		TeamReviewers:      teamReviewers,
+		Assignees:          fetchAssignees,
+		ApiActorsSupported: editable.ApiActorsSupported,
+		Labels:             editable.Labels.Edited,
+		ProjectsV1:         editable.Projects.Edited && projectV1Support == gh.ProjectsV1Supported,
+		ProjectsV2:         editable.Projects.Edited,
+		Milestones:         editable.Milestone.Edited,
 	}
 	metadata, err := api.RepoMetadata(client, repo, input)
 	if err != nil {
@@ -574,7 +582,8 @@ func FetchOptions(client *api.Client, repo ghrepo.Interface, editable *Editable,
 
 	editable.Metadata = *metadata
 	editable.Reviewers.Options = append(users, teams...)
-	if editable.Assignees.ActorAssignees {
+	// TODO ApiActorsSupported
+	if editable.ApiActorsSupported {
 		editable.Assignees.Options = actors
 	} else {
 		editable.Assignees.Options = users

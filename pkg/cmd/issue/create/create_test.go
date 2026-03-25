@@ -548,7 +548,7 @@ func Test_createRun(t *testing.T) {
 						{ "data": { "replaceActorsForAssignable": { "__typename": "" } } }
 					`, func(inputs map[string]interface{}) {
 						assert.Equal(t, "ISSUEID", inputs["assignableId"])
-						assert.Equal(t, []interface{}{"copilot-swe-agent", "MonaLisa"}, inputs["actorLogins"])
+						assert.Equal(t, []interface{}{"copilot-swe-agent[bot]", "MonaLisa"}, inputs["actorLogins"])
 					}))
 			},
 			wantsStdout: "https://github.com/OWNER/REPO/issues/12\n",
@@ -1161,7 +1161,7 @@ func TestIssueCreate_AtCopilotAssignee(t *testing.T) {
 		{ "data": { "replaceActorsForAssignable": { "__typename": "" } } }
 	`, func(inputs map[string]interface{}) {
 			assert.Equal(t, "NEWISSUEID", inputs["assignableId"])
-			assert.Equal(t, []interface{}{"copilot-swe-agent"}, inputs["actorLogins"])
+			assert.Equal(t, []interface{}{"copilot-swe-agent[bot]"}, inputs["actorLogins"])
 		}))
 
 	output, err := runCommand(http, true, `-a @copilot -t hello -b "cash rules everything around me"`, nil)

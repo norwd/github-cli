@@ -963,14 +963,15 @@ func (m *RepoMetadataResult) Merge(m2 *RepoMetadataResult) {
 }
 
 type RepoMetadataInput struct {
-	Assignees      bool
-	ActorAssignees bool
-	Reviewers      bool
-	TeamReviewers  bool
-	Labels         bool
-	ProjectsV1     bool
-	ProjectsV2     bool
-	Milestones     bool
+	Assignees     bool
+	Reviewers     bool
+	TeamReviewers bool
+	// TODO ApiActorsSupported
+	ApiActorsSupported bool
+	Labels             bool
+	ProjectsV1         bool
+	ProjectsV2         bool
+	Milestones         bool
 }
 
 // RepoMetadata pre-fetches the metadata for attaching to issues and pull requests
@@ -979,7 +980,8 @@ func RepoMetadata(client *Client, repo ghrepo.Interface, input RepoMetadataInput
 	var g errgroup.Group
 
 	if input.Assignees || input.Reviewers {
-		if input.ActorAssignees {
+		// TODO ApiActorsSupported
+		if input.ApiActorsSupported {
 			g.Go(func() error {
 				actors, err := RepoAssignableActors(client, repo)
 				if err != nil {

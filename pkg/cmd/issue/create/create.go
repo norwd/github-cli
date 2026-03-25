@@ -179,7 +179,7 @@ func createRun(opts *CreateOptions) (err error) {
 
 	// Replace special values in assignees
 	// For web mode, @copilot should be replaced by name; otherwise, login.
-	assigneeReplacer := prShared.NewSpecialAssigneeReplacer(apiClient, baseRepo.RepoHost(), issueFeatures.ActorIsAssignable, !opts.WebMode)
+	assigneeReplacer := prShared.NewSpecialAssigneeReplacer(apiClient, baseRepo.RepoHost(), issueFeatures.ApiActorsSupported, !opts.WebMode)
 	assignees, err := assigneeReplacer.ReplaceSlice(opts.Assignees)
 	if err != nil {
 		return err
@@ -188,14 +188,14 @@ func createRun(opts *CreateOptions) (err error) {
 	assigneeSet.AddValues(assignees)
 
 	tb := prShared.IssueMetadataState{
-		Type:           prShared.IssueMetadata,
-		ActorAssignees: issueFeatures.ActorIsAssignable,
-		Assignees:      assigneeSet.ToSlice(),
-		Labels:         opts.Labels,
-		ProjectTitles:  opts.Projects,
-		Milestones:     milestones,
-		Title:          opts.Title,
-		Body:           opts.Body,
+		Type:               prShared.IssueMetadata,
+		ApiActorsSupported: issueFeatures.ApiActorsSupported, // TODO ApiActorsSupported
+		Assignees:          assigneeSet.ToSlice(),
+		Labels:             opts.Labels,
+		ProjectTitles:      opts.Projects,
+		Milestones:         milestones,
+		Title:              opts.Title,
+		Body:               opts.Body,
 	}
 
 	if opts.RecoverFile != "" {
@@ -309,7 +309,7 @@ func createRun(opts *CreateOptions) (err error) {
 				State:     &tb,
 			}
 			var assigneeSearchFunc func(string) prompter.MultiSelectSearchResult
-			if issueFeatures.ActorIsAssignable {
+			if issueFeatures.ApiActorsSupported {
 				assigneeSearchFunc = prShared.RepoAssigneeSearchFunc(apiClient, baseRepo)
 			}
 			err = prShared.MetadataSurvey(opts.Prompter, opts.IO, baseRepo, fetcher, &tb, projectsV1Support, nil, assigneeSearchFunc)

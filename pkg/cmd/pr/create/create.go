@@ -399,7 +399,7 @@ func createRun(opts *CreateOptions) error {
 
 	client := ctx.Client
 
-	// Detect ActorIsAssignable feature to determine if we can use search-based
+	// Detect ApiActorsSupported feature to determine if we can use search-based
 	// reviewer selection (github.com) or need to use legacy ID-based selection (GHES)
 	issueFeatures, err := opts.Detector.IssueFeatures()
 	if err != nil {
@@ -407,7 +407,7 @@ func createRun(opts *CreateOptions) error {
 	}
 	var reviewerSearchFunc func(string) prompter.MultiSelectSearchResult
 	var assigneeSearchFunc func(string) prompter.MultiSelectSearchResult
-	if issueFeatures.ActorIsAssignable {
+	if issueFeatures.ApiActorsSupported {
 		reviewerSearchFunc = func(query string) prompter.MultiSelectSearchResult {
 			candidates, moreResults, err := api.SuggestedReviewerActorsForRepo(client, ctx.PRRefs.BaseRepo(), query)
 			if err != nil {
@@ -424,14 +424,14 @@ func createRun(opts *CreateOptions) error {
 		assigneeSearchFunc = shared.RepoAssigneeSearchFunc(client, ctx.PRRefs.BaseRepo())
 	}
 
-	state, err := NewIssueState(*ctx, *opts)
+	state, err := NewIssueState(*ctx, *opts, issueFeatures.ApiActorsSupported)
 	if err != nil {
 		return err
 	}
 
-	if issueFeatures.ActorIsAssignable {
-		state.ActorReviewers = true
-		state.ActorAssignees = true
+	// TODO ApiActorsSupported
+	if issueFeatures.ApiActorsSupported {
+		state.ApiActorsSupported = true
 	}
 
 	var openURL string
@@ -672,14 +672,14 @@ func initDefaultTitleBody(ctx CreateContext, state *shared.IssueMetadataState, u
 	return nil
 }
 
-func NewIssueState(ctx CreateContext, opts CreateOptions) (*shared.IssueMetadataState, error) {
+func NewIssueState(ctx CreateContext, opts CreateOptions, apiActorsSupported bool) (*shared.IssueMetadataState, error) {
 	var milestoneTitles []string
 	if opts.Milestone != "" {
 		milestoneTitles = []string{opts.Milestone}
 	}
 
-	meReplacer := shared.NewMeReplacer(ctx.Client, ctx.PRRefs.BaseRepo().RepoHost())
-	assignees, err := meReplacer.ReplaceSlice(opts.Assignees)
+	assigneeReplacer := shared.NewSpecialAssigneeReplacer(ctx.Client, ctx.PRRefs.BaseRepo().RepoHost(), apiActorsSupported, !opts.WebMode)
+	assignees, err := assigneeReplacer.ReplaceSlice(opts.Assignees)
 	if err != nil {
 		return nil, err
 	}

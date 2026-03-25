@@ -270,8 +270,8 @@ func editRun(opts *EditOptions) error {
 		return err
 	}
 
-	// TODO actorIsAssignableCleanup
-	if issueFeatures.ActorIsAssignable {
+	// TODO ApiActorsSupported
+	if issueFeatures.ApiActorsSupported {
 		findOptions.Fields = append(findOptions.Fields, "assignedActors")
 	} else {
 		findOptions.Fields = append(findOptions.Fields, "assignees")
@@ -289,9 +289,9 @@ func editRun(opts *EditOptions) error {
 	editable.Base.Default = pr.BaseRefName
 	editable.Reviewers.Default = pr.ReviewRequests.DisplayNames()
 	editable.Reviewers.DefaultLogins = pr.ReviewRequests.Logins()
-	// TODO actorIsAssignableCleanup
-	if issueFeatures.ActorIsAssignable {
-		editable.Assignees.ActorAssignees = true
+	// TODO ApiActorsSupported
+	if issueFeatures.ApiActorsSupported {
+		editable.ApiActorsSupported = true
 		editable.Assignees.Default = pr.AssignedActors.DisplayNames()
 		editable.Assignees.DefaultLogins = pr.AssignedActors.Logins()
 	} else {
@@ -320,8 +320,8 @@ func editRun(opts *EditOptions) error {
 	// Wire up search functions for assignees and reviewers.
 	// When these aren't wired up, it triggers a downstream fallback
 	// to legacy reviewer/assignee fetching.
-	// TODO actorIsAssignableCleanup
-	if issueFeatures.ActorIsAssignable {
+	// TODO ApiActorsSupported
+	if issueFeatures.ApiActorsSupported {
 		editable.AssigneeSearchFunc = shared.AssigneeSearchFunc(apiClient, repo, pr.ID)
 		editable.ReviewerSearchFunc = reviewerSearchFunc(apiClient, repo, &editable, pr.ID)
 	}
@@ -438,7 +438,8 @@ func updatePullRequestReviews(httpClient *http.Client, repo ghrepo.Interface, pr
 		// Replace @copilot with the Copilot reviewer login (only on github.com).
 		// Also use DefaultLogins (not Default display names) for computing the set.
 		var defaultLogins []string
-		if editable.Assignees.ActorAssignees {
+		// TODO ApiActorsSupported
+		if editable.ApiActorsSupported {
 			copilotReplacer := shared.NewCopilotReviewerReplacer()
 			add = copilotReplacer.ReplaceSlice(add)
 			remove = copilotReplacer.ReplaceSlice(remove)
@@ -457,7 +458,8 @@ func updatePullRequestReviews(httpClient *http.Client, repo ghrepo.Interface, pr
 
 	// On github.com, use the new GraphQL mutation which supports bots.
 	// On GHES, fall back to REST API.
-	if editable.Assignees.ActorAssignees {
+	// TODO ApiActorsSupported
+	if editable.ApiActorsSupported {
 		return updatePullRequestReviewsGraphQL(client, repo, prID, editable)
 	}
 	return updatePullRequestReviewsREST(client, repo, number, editable)

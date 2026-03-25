@@ -61,11 +61,13 @@ func AddMetadataToIssueParams(client *api.Client, baseRepo ghrepo.Interface, par
 		return nil
 	}
 
-	// When ActorReviewers is true, we use login-based mutation and don't need to resolve reviewer IDs.
-	needReviewerIDs := len(tb.Reviewers) > 0 && !tb.ActorReviewers
+	// TODO ApiActorsSupported
+	// When ApiActorsSupported is true, we use login-based mutation and don't need to resolve reviewer IDs.
+	needReviewerIDs := len(tb.Reviewers) > 0 && !tb.ApiActorsSupported
 
-	// When ActorAssignees is true, we use login-based mutation and don't need to resolve assignee IDs.
-	needAssigneeIDs := len(tb.Assignees) > 0 && !tb.ActorAssignees
+	// TODO ApiActorsSupported
+	// When ApiActorsSupported is true, we use login-based mutation and don't need to resolve assignee IDs.
+	needAssigneeIDs := len(tb.Assignees) > 0 && !tb.ApiActorsSupported
 
 	// Retrieve minimal information needed to resolve metadata if this was not previously cached from additional metadata survey.
 	if tb.MetadataResult == nil {
@@ -88,9 +90,10 @@ func AddMetadataToIssueParams(client *api.Client, baseRepo ghrepo.Interface, par
 		tb.MetadataResult = metadataResult
 	}
 
-	// When ActorAssignees is true (github.com), pass logins directly for use with
+	// TODO ApiActorsSupported
+	// When ApiActorsSupported is true (github.com), pass logins directly for use with
 	// ReplaceActorsForAssignable mutation. The ID-based else branch is for GHES compatibility.
-	if tb.ActorAssignees {
+	if tb.ApiActorsSupported {
 		params["assigneeLogins"] = tb.Assignees
 	} else {
 		assigneeIDs, err := tb.MetadataResult.MembersToIDs(tb.Assignees)
@@ -138,11 +141,11 @@ func AddMetadataToIssueParams(client *api.Client, baseRepo ghrepo.Interface, par
 		}
 	}
 
-	// TODO requestReviewsByLoginCleanup
-	// When ActorReviewers is true (github.com), pass logins directly for use with
+	// TODO ApiActorsSupported
+	// When ApiActorsSupported is true (github.com), pass logins directly for use with
 	// RequestReviewsByLogin mutation. The ID-based else branch can be removed once
 	// GHES supports requestReviewsByLogin.
-	if tb.ActorReviewers {
+	if tb.ApiActorsSupported {
 		params["userReviewerLogins"] = userReviewers
 		if len(botReviewers) > 0 {
 			params["botReviewerLogins"] = botReviewers
