@@ -234,7 +234,7 @@ func createRun(opts *CreateOptions) (err error) {
 		fmt.Fprintf(opts.IO.ErrOut, "\nCreating issue in %s\n\n", ghrepo.FullName(baseRepo))
 	}
 
-	repo, err := api.GitHubRepo(apiClient, baseRepo)
+	repo, err := api.IssueRepoInfo(apiClient, baseRepo)
 	if err != nil {
 		return
 	}
