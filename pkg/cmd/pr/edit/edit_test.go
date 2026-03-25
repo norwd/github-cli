@@ -415,7 +415,7 @@ func Test_editRun(t *testing.T) {
 			httpStubs: func(t *testing.T, reg *httpmock.Registry) {
 				// Non-interactive with Add/Remove doesn't need reviewers/assignees metadata
 				// REST API accepts logins and team slugs directly
-				mockRepoMetadata(reg, mockRepoMetadataOptions{reviewers: false, teamReviewers: false, assignees: true, labels: true, projects: true, milestones: true})
+				mockRepoMetadata(reg, mockRepoMetadataOptions{reviewers: false, teamReviewers: false, assignees: false, labels: true, projects: true, milestones: true})
 				mockPullRequestUpdate(reg)
 				mockPullRequestUpdateActorAssignees(reg)
 				mockRequestReviewsByLogin(reg)
@@ -473,7 +473,7 @@ func Test_editRun(t *testing.T) {
 				Fetcher: testFetcher{},
 			},
 			httpStubs: func(t *testing.T, reg *httpmock.Registry) {
-				mockRepoMetadata(reg, mockRepoMetadataOptions{assignees: true, labels: true, projects: true, milestones: true})
+				mockRepoMetadata(reg, mockRepoMetadataOptions{assignees: false, labels: true, projects: true, milestones: true})
 				mockPullRequestUpdate(reg)
 				mockPullRequestUpdateActorAssignees(reg)
 				mockPullRequestUpdateLabels(reg)
@@ -547,7 +547,7 @@ func Test_editRun(t *testing.T) {
 			},
 			httpStubs: func(t *testing.T, reg *httpmock.Registry) {
 				// Non-interactive with Remove doesn't need reviewers metadata
-				mockRepoMetadata(reg, mockRepoMetadataOptions{reviewers: false, teamReviewers: false, assignees: true, labels: true, projects: true, milestones: true})
+				mockRepoMetadata(reg, mockRepoMetadataOptions{reviewers: false, teamReviewers: false, assignees: false, labels: true, projects: true, milestones: true})
 				mockPullRequestUpdate(reg)
 				mockRequestReviewsByLogin(reg)
 				mockPullRequestUpdateLabels(reg)
@@ -912,12 +912,8 @@ func Test_editRun(t *testing.T) {
 						require.Equal(t, []string{"hubot"}, e.Assignees.DefaultLogins)
 
 						// Adding monalisa as PR assignee, should preserve hubot.
-						e.Assignees.Value = []string{"hubot", "monalisa (Mona Display Name)"}
-						// Populate metadata to simulate what searchFunc would do during prompting
-						e.Metadata.AssignableActors = []api.AssignableActor{
-							api.NewAssignableBot("HUBOTID", "hubot"),
-							api.NewAssignableUser("MONAID", "monalisa", "Mona Display Name"),
-						}
+						// MultiSelectWithSearch returns Keys (logins), not display names.
+						e.Assignees.Value = []string{"hubot", "monalisa"}
 						return nil
 					},
 				},
@@ -931,10 +927,7 @@ func Test_editRun(t *testing.T) {
 					httpmock.GraphQLMutation(`
 					{ "data": { "replaceActorsForAssignable": { "__typename": "" } } }`,
 						func(inputs map[string]interface{}) {
-							// Checking that despite the display name being returned
-							// from the EditFieldsSurvey, the ID is still
-							// used in the mutation.
-							require.Subset(t, inputs["actorIds"], []string{"MONAID", "HUBOTID"})
+							require.Subset(t, inputs["actorLogins"], []interface{}{"hubot", "monalisa"})
 						}),
 				)
 			},

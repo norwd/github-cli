@@ -322,7 +322,7 @@ func editRun(opts *EditOptions) error {
 	// to legacy reviewer/assignee fetching.
 	// TODO actorIsAssignableCleanup
 	if issueFeatures.ActorIsAssignable {
-		editable.AssigneeSearchFunc = assigneeSearchFunc(apiClient, repo, &editable, pr.ID)
+		editable.AssigneeSearchFunc = shared.AssigneeSearchFunc(apiClient, repo, pr.ID)
 		editable.ReviewerSearchFunc = reviewerSearchFunc(apiClient, repo, &editable, pr.ID)
 	}
 
@@ -363,57 +363,6 @@ func editRun(opts *EditOptions) error {
 	fmt.Fprintln(opts.IO.Out, pr.URL)
 
 	return nil
-}
-
-// assigneeSearchFunc is intended to be an arg for MultiSelectWithSearch
-// to return potential assignee actors.
-// It also contains an important enclosure to update the editable's
-// assignable actors metadata for later ID resolution - this is required
-// while we continue to use IDs for mutating assignees with the GQL API.
-func assigneeSearchFunc(apiClient *api.Client, repo ghrepo.Interface, editable *shared.Editable, assignableID string) func(string) prompter.MultiSelectSearchResult {
-	searchFunc := func(input string) prompter.MultiSelectSearchResult {
-		actors, availableAssigneesCount, err := api.SuggestedAssignableActors(
-			apiClient,
-			repo,
-			assignableID,
-			input)
-		if err != nil {
-			return prompter.MultiSelectSearchResult{
-				Keys:        nil,
-				Labels:      nil,
-				MoreResults: 0,
-				Err:         err,
-			}
-		}
-
-		logins := make([]string, 0, len(actors))
-		displayNames := make([]string, 0, len(actors))
-
-		for _, a := range actors {
-			if a.Login() != "" {
-				logins = append(logins, a.Login())
-			} else {
-				continue
-			}
-
-			if a.DisplayName() != "" {
-				displayNames = append(displayNames, a.DisplayName())
-			} else {
-				displayNames = append(displayNames, a.Login())
-			}
-
-			// Update the assignable actors metadata in the editable struct
-			// so that updating the PR later can resolve the actor ID.
-			editable.Metadata.AssignableActors = append(editable.Metadata.AssignableActors, a)
-		}
-		return prompter.MultiSelectSearchResult{
-			Keys:        logins,
-			Labels:      displayNames,
-			MoreResults: availableAssigneesCount,
-			Err:         nil,
-		}
-	}
-	return searchFunc
 }
 
 // reviewerSearchFunc is intended to be an arg for MultiSelectWithSearch

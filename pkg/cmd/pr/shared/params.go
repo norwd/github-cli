@@ -64,6 +64,9 @@ func AddMetadataToIssueParams(client *api.Client, baseRepo ghrepo.Interface, par
 	// When ActorReviewers is true, we use login-based mutation and don't need to resolve reviewer IDs.
 	needReviewerIDs := len(tb.Reviewers) > 0 && !tb.ActorReviewers
 
+	// When ActorAssignees is true, we use login-based mutation and don't need to resolve assignee IDs.
+	needAssigneeIDs := len(tb.Assignees) > 0 && !tb.ActorAssignees
+
 	// Retrieve minimal information needed to resolve metadata if this was not previously cached from additional metadata survey.
 	if tb.MetadataResult == nil {
 		input := api.RepoMetadataInput{
@@ -71,12 +74,11 @@ func AddMetadataToIssueParams(client *api.Client, baseRepo ghrepo.Interface, par
 			TeamReviewers: needReviewerIDs && slices.ContainsFunc(tb.Reviewers, func(r string) bool {
 				return strings.ContainsRune(r, '/')
 			}),
-			Assignees:      len(tb.Assignees) > 0,
-			ActorAssignees: tb.ActorAssignees,
-			Labels:         len(tb.Labels) > 0,
-			ProjectsV1:     len(tb.ProjectTitles) > 0 && projectV1Support == gh.ProjectsV1Supported,
-			ProjectsV2:     len(tb.ProjectTitles) > 0,
-			Milestones:     len(tb.Milestones) > 0,
+			Assignees:  needAssigneeIDs,
+			Labels:     len(tb.Labels) > 0,
+			ProjectsV1: len(tb.ProjectTitles) > 0 && projectV1Support == gh.ProjectsV1Supported,
+			ProjectsV2: len(tb.ProjectTitles) > 0,
+			Milestones: len(tb.Milestones) > 0,
 		}
 
 		metadataResult, err := api.RepoMetadata(client, baseRepo, input)
@@ -86,11 +88,17 @@ func AddMetadataToIssueParams(client *api.Client, baseRepo ghrepo.Interface, par
 		tb.MetadataResult = metadataResult
 	}
 
-	assigneeIDs, err := tb.MetadataResult.MembersToIDs(tb.Assignees)
-	if err != nil {
-		return fmt.Errorf("could not assign user: %w", err)
+	// When ActorAssignees is true (github.com), pass logins directly for use with
+	// ReplaceActorsForAssignable mutation. The ID-based else branch is for GHES compatibility.
+	if tb.ActorAssignees {
+		params["assigneeLogins"] = tb.Assignees
+	} else {
+		assigneeIDs, err := tb.MetadataResult.MembersToIDs(tb.Assignees)
+		if err != nil {
+			return fmt.Errorf("could not assign user: %w", err)
+		}
+		params["assigneeIds"] = assigneeIDs
 	}
-	params["assigneeIds"] = assigneeIDs
 
 	labelIDs, err := tb.MetadataResult.LabelsToIDs(tb.Labels)
 	if err != nil {

@@ -528,17 +528,6 @@ func Test_editRun(t *testing.T) {
 			httpStubs: func(t *testing.T, reg *httpmock.Registry) {
 				// Should only be one fetch of metadata.
 				reg.Register(
-					httpmock.GraphQL(`query RepositoryAssignableActors\b`),
-					httpmock.StringResponse(`
-					{ "data": { "repository": { "suggestedActors": {
-						"nodes": [
-							{ "login": "hubot", "id": "HUBOTID", "__typename": "Bot" },
-							{ "login": "MonaLisa", "id": "MONAID", "__typename": "User" }
-						],
-						"pageInfo": { "hasNextPage": false, "endCursor": "Mg" }
-					} } } }
-					`))
-				reg.Register(
 					httpmock.GraphQL(`query RepositoryMilestoneList\b`),
 					httpmock.StringResponse(`
 					{ "data": { "repository": { "milestones": {
@@ -640,8 +629,9 @@ func Test_editRun(t *testing.T) {
 					require.Equal(t, []string{"hubot"}, eo.Assignees.Default)
 					require.Equal(t, []string{"hubot"}, eo.Assignees.DefaultLogins)
 
-					// Adding MonaLisa as PR assignee, should preserve hubot.
-					eo.Assignees.Value = []string{"hubot", "MonaLisa (Mona Display Name)"}
+					// Adding MonaLisa as issue assignee, should preserve hubot.
+					// MultiSelectWithSearch returns Keys (logins), not display names.
+					eo.Assignees.Value = []string{"hubot", "MonaLisa"}
 					return nil
 				},
 				FetchOptions:    prShared.FetchOptions,
@@ -649,27 +639,13 @@ func Test_editRun(t *testing.T) {
 			},
 			httpStubs: func(t *testing.T, reg *httpmock.Registry) {
 				mockIsssueNumberGetWithAssignedActors(t, reg, 123)
-				reg.Register(
-					httpmock.GraphQL(`query RepositoryAssignableActors\b`),
-					httpmock.StringResponse(`
-					{ "data": { "repository": { "suggestedActors": {
-						"nodes": [
-							{ "login": "hubot", "id": "HUBOTID", "__typename": "Bot" },
-							{ "login": "MonaLisa", "id": "MONAID", "name": "Mona Display Name", "__typename": "User" }
-						],
-						"pageInfo": { "hasNextPage": false }
-					} } } }
-					`))
 				mockIssueUpdate(t, reg)
 				reg.Register(
 					httpmock.GraphQL(`mutation ReplaceActorsForAssignable\b`),
 					httpmock.GraphQLMutation(`
 					{ "data": { "replaceActorsForAssignable": { "__typename": "" } } }`,
 						func(inputs map[string]interface{}) {
-							// Checking that despite the display name being returned
-							// from the EditFieldsSurvey, the ID is still
-							// used in the mutation.
-							require.Subset(t, inputs["actorIds"], []string{"MONAID", "HUBOTID"})
+							require.Subset(t, inputs["actorLogins"], []interface{}{"hubot", "MonaLisa"})
 						}),
 				)
 			},
@@ -839,18 +815,6 @@ func mockIssueProjectItemsGet(_ *testing.T, reg *httpmock.Registry) {
 }
 
 func mockRepoMetadata(_ *testing.T, reg *httpmock.Registry) {
-	reg.Register(
-		httpmock.GraphQL(`query RepositoryAssignableActors\b`),
-		httpmock.StringResponse(`
-		{ "data": { "repository": { "suggestedActors": {
-			"nodes": [
-				{ "login": "hubot", "id": "HUBOTID", "__typename": "Bot" },
-				{ "login": "monalisa", "id": "MONAID", "name": "Mona Display Name", "__typename": "User" }
-			],
-			"pageInfo": { "hasNextPage": false }
-		} } } }
-		`))
-
 	reg.Register(
 		httpmock.GraphQL(`query RepositoryLabelList\b`),
 		httpmock.StringResponse(`

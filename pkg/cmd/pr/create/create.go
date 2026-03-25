@@ -406,6 +406,7 @@ func createRun(opts *CreateOptions) error {
 		return err
 	}
 	var reviewerSearchFunc func(string) prompter.MultiSelectSearchResult
+	var assigneeSearchFunc func(string) prompter.MultiSelectSearchResult
 	if issueFeatures.ActorIsAssignable {
 		reviewerSearchFunc = func(query string) prompter.MultiSelectSearchResult {
 			candidates, moreResults, err := api.SuggestedReviewerActorsForRepo(client, ctx.PRRefs.BaseRepo(), query)
@@ -420,6 +421,7 @@ func createRun(opts *CreateOptions) error {
 			}
 			return prompter.MultiSelectSearchResult{Keys: keys, Labels: labels, MoreResults: moreResults}
 		}
+		assigneeSearchFunc = shared.RepoAssigneeSearchFunc(client, ctx.PRRefs.BaseRepo())
 	}
 
 	state, err := NewIssueState(*ctx, *opts)
@@ -429,6 +431,7 @@ func createRun(opts *CreateOptions) error {
 
 	if issueFeatures.ActorIsAssignable {
 		state.ActorReviewers = true
+		state.ActorAssignees = true
 	}
 
 	var openURL string
@@ -597,7 +600,7 @@ func createRun(opts *CreateOptions) error {
 				Repo:      ctx.PRRefs.BaseRepo(),
 				State:     state,
 			}
-			err = shared.MetadataSurvey(opts.Prompter, opts.IO, ctx.PRRefs.BaseRepo(), fetcher, state, projectsV1Support, reviewerSearchFunc)
+			err = shared.MetadataSurvey(opts.Prompter, opts.IO, ctx.PRRefs.BaseRepo(), fetcher, state, projectsV1Support, reviewerSearchFunc, assigneeSearchFunc)
 			if err != nil {
 				return err
 			}

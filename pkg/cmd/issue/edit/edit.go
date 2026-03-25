@@ -248,6 +248,13 @@ func editRun(opts *EditOptions) error {
 
 	// Fetch editable shared fields once for all issues.
 	apiClient := api.NewClientFromHTTP(httpClient)
+
+	// Wire up search function for assignees when ActorIsAssignable is available.
+	// Interactive mode only supports a single issue, so we use its ID for the search query.
+	if issueFeatures.ActorIsAssignable && opts.Interactive && len(issues) == 1 {
+		editable.AssigneeSearchFunc = prShared.AssigneeSearchFunc(apiClient, baseRepo, issues[0].ID)
+	}
+
 	opts.IO.StartProgressIndicatorWithLabel("Fetching repository information")
 	err = opts.FetchOptions(apiClient, baseRepo, &editable, opts.Detector.ProjectsV1())
 	opts.IO.StopProgressIndicator()
