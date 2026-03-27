@@ -19,6 +19,7 @@ import (
 type Factory struct {
 	AppVersion     string
 	ExecutableName string
+	InvokingAgent  string
 
 	Browser          browser.Browser
 	ExtensionManager extensions.ExtensionManager

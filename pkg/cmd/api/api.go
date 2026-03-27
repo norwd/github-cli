@@ -34,12 +34,13 @@ const (
 )
 
 type ApiOptions struct {
-	AppVersion string
-	BaseRepo   func() (ghrepo.Interface, error)
-	Branch     func() (string, error)
-	Config     func() (gh.Config, error)
-	HttpClient func() (*http.Client, error)
-	IO         *iostreams.IOStreams
+	AppVersion    string
+	InvokingAgent string
+	BaseRepo      func() (ghrepo.Interface, error)
+	Branch        func() (string, error)
+	Config        func() (gh.Config, error)
+	HttpClient    func() (*http.Client, error)
+	IO            *iostreams.IOStreams
 
 	Hostname            string
 	RequestMethod       string
@@ -62,11 +63,12 @@ type ApiOptions struct {
 
 func NewCmdApi(f *cmdutil.Factory, runF func(*ApiOptions) error) *cobra.Command {
 	opts := ApiOptions{
-		AppVersion: f.AppVersion,
-		BaseRepo:   f.BaseRepo,
-		Branch:     f.Branch,
-		Config:     f.Config,
-		IO:         f.IOStreams,
+		AppVersion:    f.AppVersion,
+		InvokingAgent: f.InvokingAgent,
+		BaseRepo:      f.BaseRepo,
+		Branch:        f.Branch,
+		Config:        f.Config,
+		IO:            f.IOStreams,
 	}
 
 	cmd := &cobra.Command{
@@ -385,6 +387,7 @@ func apiRun(opts *ApiOptions) error {
 			}
 			opts := api.HTTPClientOptions{
 				AppVersion:     opts.AppVersion,
+				InvokingAgent:  opts.InvokingAgent,
 				CacheTTL:       opts.CacheTTL,
 				Config:         cfg.Authentication(),
 				EnableCache:    opts.CacheTTL > 0,

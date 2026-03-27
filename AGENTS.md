@@ -13,6 +13,12 @@ go test -tags acceptance ./acceptance      # Acceptance tests
 make lint                                  # golangci-lint (same as CI)
 ```
 
+**Before committing, ensure both tests and linter pass:**
+```bash
+go test ./...
+make lint
+```
+
 ## Architecture
 
 Entry point: `cmd/gh/main.go` → `internal/ghcmd.Main()` → `pkg/cmd/root.NewCmdRoot()`.

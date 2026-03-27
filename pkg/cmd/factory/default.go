@@ -29,6 +29,7 @@ var ssoURLRE = regexp.MustCompile(`\burl=([^;]+)`)
 func New(appVersion string, invokingAgent string) *cmdutil.Factory {
 	f := &cmdutil.Factory{
 		AppVersion:     appVersion,
+		InvokingAgent:  invokingAgent,
 		Config:         configFunc(), // No factory dependencies
 		ExecutableName: "gh",
 	}
