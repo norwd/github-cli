@@ -2,6 +2,13 @@
 
 ## Recommended _(Official)_
 
+> [!IMPORTANT]
+> Our Linux packages and repository metadata are signed with the following PGP key fingerprints:
+> - `2C6106201985B60E6C7AC87323F3D4EA75716059`
+> - `7F38BBB59D064DBCB3D84D725612B36462313325`
+>
+> You may be prompted to confirm the import of these keys during installation.
+
 ### Debian
 
 Debian packages are hosted on the [GitHub CLI marketing site](https://cli.github.com/) for various operating systems including:
@@ -33,6 +40,13 @@ sudo apt update
 sudo apt install gh
 ```
 
+> [!TIP]
+> To verify PGP keys before installing `gh`, you can run this and match the listed fingerprints with those at the top of this document:
+>
+> ```shell
+> curl -fsSL -o - https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --show-keys
+> ```
+
 ### RPM
 
 RPM packages are hosted on the [GitHub CLI marketing site](https://cli.github.com) for various operating systems including:
@@ -45,6 +59,15 @@ RPM packages are hosted on the [GitHub CLI marketing site](https://cli.github.co
 - [SUSE](https://www.suse.com/)
 
 These packages are supported by the GitHub CLI maintainers with updates powered by [GitHub CLI deployment workflow](https://github.com/cli/cli/actions/workflows/deployment.yml).
+
+> [!TIP]
+> During installation, you may be prompted to confirm the import of PGP keys. You can verify the keys with the list of fingerprints at the top of this document.
+>
+> To verify the PGP keys before installing `gh`, you can run the following command and match the listed fingerprints with those at the top of this document:
+>
+> ```shell
+> curl -fsSL -o - https://cli.github.com/packages/githubcli-archive-keyring.asc | gpg --show-keys
+> ```
 
 #### DNF5
 
