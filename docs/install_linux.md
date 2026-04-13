@@ -8,6 +8,27 @@
 > - `7F38BBB59D064DBCB3D84D725612B36462313325`
 >
 > You may be prompted to confirm the import of these keys during installation.
+>
+> <details><summary>Expand for SHA256/SHA512/MD5 checksums of our official keyring files.</summary>
+> <p>
+>
+>  **For security reasons, it is strongly recommended to only rely on SHA256/SHA512 checksums. MD5 checksums below are only for legacy systems where SHA256/SHA512 tooling is not available.**
+>
+> - `https://cli.github.com/packages/githubcli-archive-keyring.gpg` (Binary):
+>    ```
+>    SHA256: 6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b
+>    SHA512: ce6b9466dbd2a90b3227e177aa9b8187bd2405b1c29f91d78de83b9699dbbe2af35efd733bf53da622e7a38c59a7bc55539d63a3deaec9ff9c2bff8af626434
+>    MD5:    23748c0965069fb1edae1b83c17890e1
+>    ```
+> - `https://cli.github.com/packages/githubcli-archive-keyring.asc` (ASCII-armored):
+>    ```
+>    SHA256: cec6e9ed82d3949ca5f4428cc968b41ef5e7416cb3653cdfc2a421977663bbfd
+>    SHA512: 2ca9487d88a508a1c87f06b46ba336b11cc5f20bd83915b4c2acde49d2cffbbce76af1641bf8494c29a765f96bc1fd694ebde2954b28b80dcc76376b6f1b766d
+>    MD5:    97100400ef48007b69e42be348cc6582
+>    ```
+>
+> </p>
+> </details>
 
 ### Debian
 
