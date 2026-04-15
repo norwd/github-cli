@@ -17,7 +17,7 @@
 > - `https://cli.github.com/packages/githubcli-archive-keyring.gpg` (Binary):
 >    ```
 >    SHA256: 6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b
->    SHA512: ce6b9466dbd2a90b3227e177aa9b8187bd2405b1c29f91d78de83b9699dbbe2af35efd733bf53da622e7a38c59a7bc55539d63a3deaec9ff9c2bff8af626434
+>    SHA512: ce6b9466dbd2a90b3227e177aa9b8187bd2405b1c29f91d78de83b9699dbbe2af35efd733bf53da622e7a38c59a7bc55539d63a3deae3c9ff9c2bff8af626434
 >    MD5:    23748c0965069fb1edae1b83c17890e1
 >    ```
 > - `https://cli.github.com/packages/githubcli-archive-keyring.asc` (ASCII-armored):
