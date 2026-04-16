@@ -2,16 +2,17 @@ package publish
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"testing"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/cli/cli/v2/git"
 	"github.com/cli/cli/v2/internal/prompter"
+	"github.com/cli/cli/v2/internal/run"
 	"github.com/cli/cli/v2/pkg/cmdutil"
 	"github.com/cli/cli/v2/pkg/httpmock"
 	"github.com/cli/cli/v2/pkg/iostreams"
@@ -20,31 +21,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// initGitRepo initializes a git repo in the given directory and adds remotes.
-// Use this when the git repo must live in the same directory as the skill files.
-// A local bare repo is created as the push target so that ensurePushed can work
-// during publish tests, while the fetch URL remains the GitHub URL so that
-// detectGitHubRemote still resolves the correct owner/repo.
-func initGitRepo(t *testing.T, dir string, remoteURLs map[string]string) {
-	t.Helper()
+// newTestGitClient returns a git.Client with a fake git path to avoid real git resolution.
+func newTestGitClient() *git.Client {
+	return &git.Client{GitPath: "some/path/git"}
+}
 
-	bareDir := filepath.Join(t.TempDir(), "upstream.git")
-	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	runGitInDir(t, bareDir, "init", "--bare", "--initial-branch=main")
-
-	runGitInDir(t, dir, "init", "--initial-branch=main")
-	runGitInDir(t, dir, "config", "user.email", "monalisa@github.com")
-	runGitInDir(t, dir, "config", "user.name", "Monalisa Octocat")
+// stubGitRemote registers CommandStubber stubs for git remote detection.
+func stubGitRemote(cs *run.CommandStubber, remoteURLs map[string]string) {
+	var remoteLines string
 	for name, url := range remoteURLs {
-		runGitInDir(t, dir, "remote", "add", name, url)
-		runGitInDir(t, dir, "remote", "set-url", "--push", name, bareDir)
+		remoteLines += fmt.Sprintf("%[1]s\t%[2]s (fetch)\n%[1]s\t%[2]s (push)\n", name, url)
 	}
+	cs.Register(`git( .+)? remote -v`, 0, remoteLines)
+	cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
+	for name, url := range remoteURLs {
+		cs.Register(fmt.Sprintf(`git( .+)? remote get-url -- %s`, regexp.QuoteMeta(name)), 0, url+"\n")
+	}
+}
 
-	runGitInDir(t, dir, "add", ".")
-	runGitInDir(t, dir, "commit", "--allow-empty", "-m", "init")
-	if _, ok := remoteURLs["origin"]; ok {
-		runGitInDir(t, dir, "push", "origin", "main")
-	}
+// stubEnsurePushed registers stubs for ensurePushed + runPublishRelease CurrentBranch calls.
+func stubEnsurePushed(cs *run.CommandStubber, branch string) {
+	cs.Register(`git( .+)? symbolic-ref --quiet HEAD`, 0, "refs/heads/"+branch+"\n")
+	cs.Register(`git( .+)? rev-list --count @\{push\}\.\.HEAD`, 0, "0\n")
+	cs.Register(`git( .+)? symbolic-ref --quiet HEAD`, 0, "refs/heads/"+branch+"\n")
 }
 
 // stubAllSecureRemote registers the standard stubs for a fully-configured remote
@@ -158,12 +157,15 @@ func TestPublishRun_UnsupportedHost(t *testing.T) {
 		Body.
 	`))
 
+	cs, cmdTeardown := run.Stub()
+	defer cmdTeardown(t)
+	stubGitRemote(cs, map[string]string{"origin": "https://github.com/monalisa/skills-repo.git"})
+
 	ios, _, _, _ := iostreams.Test()
-	initGitRepo(t, dir, map[string]string{"origin": "https://github.com/monalisa/skills-repo.git"})
 	err := publishRun(&PublishOptions{
 		IO:         ios,
 		Dir:        dir,
-		GitClient:  &git.Client{},
+		GitClient:  newTestGitClient(),
 		HttpClient: func() (*http.Client, error) { return nil, nil },
 		host:       "acme.ghes.com",
 	})
@@ -176,6 +178,7 @@ func TestPublishRun(t *testing.T) {
 		isTTY      bool
 		setup      func(t *testing.T, dir string)
 		stubs      func(*httpmock.Registry)
+		cmdStubs   func(*run.CommandStubber)
 		opts       func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions
 		verify     func(t *testing.T, dir string)
 		wantErr    string
@@ -275,12 +278,14 @@ func TestPublishRun(t *testing.T) {
 					---
 					Body.
 				`)), 0o644))
-				initGitRepo(t, dir, map[string]string{
-					"origin": "https://github.com/monalisa/skills-repo.git",
-				})
 			},
 			stubs: func(reg *httpmock.Registry) {
 				stubAllSecureRemote(reg, "monalisa", "skills-repo")
+			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
+					"origin": "https://github.com/monalisa/skills-repo.git",
+				})
 			},
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
@@ -288,7 +293,7 @@ func TestPublishRun(t *testing.T) {
 					IO:         ios,
 					Dir:        dir,
 					DryRun:     true,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -312,12 +317,14 @@ func TestPublishRun(t *testing.T) {
 					---
 					Body.
 				`)), 0o644))
-				initGitRepo(t, dir, map[string]string{
-					"origin": "https://github.com/monalisa/skills-repo.git",
-				})
 			},
 			stubs: func(reg *httpmock.Registry) {
 				stubAllSecureRemote(reg, "monalisa", "skills-repo")
+			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
+					"origin": "https://github.com/monalisa/skills-repo.git",
+				})
 			},
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
@@ -325,7 +332,7 @@ func TestPublishRun(t *testing.T) {
 					IO:         ios,
 					Dir:        dir,
 					DryRun:     true,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -350,16 +357,18 @@ func TestPublishRun(t *testing.T) {
 			stubs: func(reg *httpmock.Registry) {
 				stubAllSecureRemote(reg, "monalisa", "skills-repo")
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
 					DryRun:     true,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -403,11 +412,14 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+				stubEnsurePushed(cs, "main")
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:  ios,
 					Dir: dir,
@@ -415,7 +427,7 @@ func TestPublishRun(t *testing.T) {
 					Prompter: &prompter.PrompterMock{
 						ConfirmFunc: func(msg string, def bool) (bool, error) { return true, nil },
 					},
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -557,15 +569,17 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/octocat/secure-repo.git",
 				})
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -610,15 +624,17 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/octocat/tag-repo.git",
 				})
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -673,16 +689,18 @@ func TestPublishRun(t *testing.T) {
 					httpmock.StatusStringResponse(404, "not found"),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/octocat/code-repo.git",
 				})
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
 					DryRun:     true,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -738,16 +756,18 @@ func TestPublishRun(t *testing.T) {
 					httpmock.StatusStringResponse(404, "not found"),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/octocat/dep-repo.git",
 				})
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
 					DryRun:     true,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -767,21 +787,25 @@ func TestPublishRun(t *testing.T) {
 					---
 					Body.
 				`))
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".agents", "skills", "installed"), 0o755))
+			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? check-ignore -q -- .agents/skills`, 1, "")
+				cs.Register(`git( .+)? remote -v`, 0, "")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
+				cs.Register(`git( .+)? rev-parse --git-dir`, 0, ".git\n")
+				cs.Register(`git( .+)? remote -v`, 0, "")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
 			},
 			opts: func(ios *iostreams.IOStreams, dir string, _ *httpmock.Registry) *PublishOptions {
 				t.Helper()
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".agents", "skills", "installed"), 0o755))
-				runGitInDir(t, dir, "init", "--initial-branch=main")
-				runGitInDir(t, dir, "config", "user.email", "monalisa@github.com")
-				runGitInDir(t, dir, "config", "user.name", "Monalisa Octocat")
-
 				return &PublishOptions{
 					IO:        ios,
 					Dir:       dir,
-					GitClient: &git.Client{RepoDir: dir},
+					GitClient: &git.Client{GitPath: "some/path/git", RepoDir: dir},
 				}
 			},
-			wantStdout: ".gitignore",
+			wantStdout: "may contain installed skills that are not gitignored",
 		},
 		{
 			name: "installed skill dirs gitignored no warning",
@@ -796,20 +820,21 @@ func TestPublishRun(t *testing.T) {
 					Body.
 				`))
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".agents", "skills", "installed"), 0o755))
-
-				runGitInDir(t, dir, "init", "--initial-branch=main")
-				runGitInDir(t, dir, "config", "user.email", "monalisa@github.com")
-				runGitInDir(t, dir, "config", "user.name", "Monalisa Octocat")
-				require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".agents/skills\n"), 0o644))
-				runGitInDir(t, dir, "add", ".gitignore")
-				runGitInDir(t, dir, "commit", "-m", "init")
+			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? check-ignore -q -- .agents/skills`, 0, "")
+				cs.Register(`git( .+)? remote -v`, 0, "")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
+				cs.Register(`git( .+)? rev-parse --git-dir`, 0, ".git\n")
+				cs.Register(`git( .+)? remote -v`, 0, "")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
 			},
 			opts: func(ios *iostreams.IOStreams, dir string, _ *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				return &PublishOptions{
 					IO:        ios,
 					Dir:       dir,
-					GitClient: &git.Client{RepoDir: dir},
+					GitClient: &git.Client{GitPath: "some/path/git", RepoDir: dir},
 				}
 			},
 			wantStdout: "no git remote",
@@ -830,15 +855,22 @@ func TestPublishRun(t *testing.T) {
 					---
 					Body.
 				`))
-				// Create install dir but do NOT init git so check-ignore will fail
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".agents", "skills", "installed"), 0o755))
+			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? check-ignore -q -- .agents/skills`, 128, "")
+				cs.Register(`git( .+)? remote -v`, 0, "")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
+				cs.Register(`git( .+)? rev-parse --git-dir`, 0, ".git\n")
+				cs.Register(`git( .+)? remote -v`, 0, "")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
 			},
 			opts: func(ios *iostreams.IOStreams, dir string, _ *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				return &PublishOptions{
 					IO:        ios,
 					Dir:       dir,
-					GitClient: &git.Client{RepoDir: dir},
+					GitClient: &git.Client{GitPath: "some/path/git", RepoDir: dir},
 				}
 			},
 			wantStdout: "may contain installed skills that are not gitignored",
@@ -855,17 +887,22 @@ func TestPublishRun(t *testing.T) {
 					---
 					Body.
 				`))
-				runGitInDir(t, dir, "init", "--initial-branch=main")
-				runGitInDir(t, dir, "config", "user.email", "monalisa@github.com")
-				runGitInDir(t, dir, "config", "user.name", "Monalisa Octocat")
-				runGitInDir(t, dir, "remote", "add", "origin", "https://gitlab.com/hubot/bar.git")
+			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
+					"origin": "https://gitlab.com/hubot/bar.git",
+				})
+				cs.Register(`git( .+)? rev-parse --git-dir`, 0, ".git\n")
+				cs.Register(`git( .+)? remote -v`, 0, "origin\thttps://gitlab.com/hubot/bar.git (fetch)\norigin\thttps://gitlab.com/hubot/bar.git (push)\n")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
+				cs.Register(fmt.Sprintf(`git( .+)? remote get-url -- %s`, regexp.QuoteMeta("origin")), 0, "https://gitlab.com/hubot/bar.git\n")
 			},
 			opts: func(ios *iostreams.IOStreams, dir string, _ *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				return &PublishOptions{
 					IO:        ios,
 					Dir:       dir,
-					GitClient: &git.Client{RepoDir: dir},
+					GitClient: &git.Client{GitPath: "some/path/git", RepoDir: dir},
 				}
 			},
 			wantStdout: "not a GitHub repository",
@@ -887,17 +924,19 @@ func TestPublishRun(t *testing.T) {
 			stubs: func(reg *httpmock.Registry) {
 				stubAllSecureRemote(reg, "octocat", "repo")
 			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? remote -v`, 0, "origin\thttps://gitlab.com/hubot/bar.git (fetch)\norigin\thttps://gitlab.com/hubot/bar.git (push)\nupstream\tgit@github.com:octocat/repo.git (fetch)\nupstream\tgit@github.com:octocat/repo.git (push)\n")
+				cs.Register(`git( .+)? config --get-regexp \^remote\\\.`, 1, "")
+				// upstream sorts first (score 3 > 1), so only upstream's get-url is called
+				cs.Register(fmt.Sprintf(`git( .+)? remote get-url -- %s`, regexp.QuoteMeta("upstream")), 0, "git@github.com:octocat/repo.git\n")
+			},
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
-				initGitRepo(t, dir, map[string]string{
-					"origin":   "https://gitlab.com/hubot/bar.git",
-					"upstream": "git@github.com:octocat/repo.git",
-				})
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
 					DryRun:     true,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -974,11 +1013,14 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+				stubEnsurePushed(cs, "main")
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:  ios,
 					Dir: dir,
@@ -986,12 +1028,11 @@ func TestPublishRun(t *testing.T) {
 					Prompter: &prompter.PrompterMock{
 						ConfirmFunc: func(msg string, def bool) (bool, error) { return true, nil },
 					},
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
 			},
-			wantStdout: "Added \"agent-skills\" topic",
 		},
 		{
 			name: "tag suggestion uses existing tags",
@@ -1052,16 +1093,19 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+				stubEnsurePushed(cs, "main")
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
 					Tag:        "v2.3.5",
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1084,16 +1128,20 @@ func TestPublishRun(t *testing.T) {
 			stubs: func(reg *httpmock.Registry) {
 				stubAllSecureRemote(reg, "monalisa", "skills-repo")
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+				cs.Register(`git( .+)? symbolic-ref --quiet HEAD`, 0, "refs/heads/main\n")
+				cs.Register(`git( .+)? rev-list --count @\{push\}\.\.HEAD`, 0, "0\n")
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
 					Tag:        "v1.0.0", // same as stubAllSecureRemote's existing tag
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1117,15 +1165,17 @@ func TestPublishRun(t *testing.T) {
 			stubs: func(reg *httpmock.Registry) {
 				stubAllSecureRemote(reg, "monalisa", "skills-repo")
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:         ios,
 					Dir:        dir,
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1215,12 +1265,15 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
+					"origin": "https://github.com/monalisa/skills-repo.git",
+				})
+				stubEnsurePushed(cs, "main")
+			},
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				confirmCall := 0
-				initGitRepo(t, dir, map[string]string{
-					"origin": "https://github.com/monalisa/skills-repo.git",
-				})
 				return &PublishOptions{
 					IO:  ios,
 					Dir: dir,
@@ -1236,7 +1289,7 @@ func TestPublishRun(t *testing.T) {
 							return "v1.0.0", nil // accept suggested tag
 						},
 					},
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1274,11 +1327,14 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+				stubEnsurePushed(cs, "main")
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:  ios,
 					Dir: dir,
@@ -1293,7 +1349,7 @@ func TestPublishRun(t *testing.T) {
 							return "beta-1", nil
 						},
 					},
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1325,12 +1381,15 @@ func TestPublishRun(t *testing.T) {
 					httpmock.JSONResponse(map[string]interface{}{"default_branch": "main"}),
 				)
 			},
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
+					"origin": "https://github.com/monalisa/skills-repo.git",
+				})
+				stubEnsurePushed(cs, "main")
+			},
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				confirmCall := 0
-				initGitRepo(t, dir, map[string]string{
-					"origin": "https://github.com/monalisa/skills-repo.git",
-				})
 				return &PublishOptions{
 					IO:  ios,
 					Dir: dir,
@@ -1349,7 +1408,7 @@ func TestPublishRun(t *testing.T) {
 							return "v1.0.1", nil
 						},
 					},
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1394,11 +1453,14 @@ func TestPublishRun(t *testing.T) {
 					}),
 				)
 			},
-			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
-				t.Helper()
-				initGitRepo(t, dir, map[string]string{
+			cmdStubs: func(cs *run.CommandStubber) {
+				stubGitRemote(cs, map[string]string{
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
+				stubEnsurePushed(cs, "main")
+			},
+			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
+				t.Helper()
 				return &PublishOptions{
 					IO:  ios,
 					Dir: dir,
@@ -1413,7 +1475,7 @@ func TestPublishRun(t *testing.T) {
 							return "v1.0.1", nil
 						},
 					},
-					GitClient:  &git.Client{},
+					GitClient:  newTestGitClient(),
 					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 					host:       "github.com",
 				}
@@ -1436,6 +1498,12 @@ func TestPublishRun(t *testing.T) {
 			defer reg.Verify(t)
 			if tt.stubs != nil {
 				tt.stubs(reg)
+			}
+
+			if tt.cmdStubs != nil {
+				cs, cmdTeardown := run.Stub()
+				defer cmdTeardown(t)
+				tt.cmdStubs(cs)
 			}
 
 			opts := tt.opts(ios, dir, reg)
@@ -1461,22 +1529,17 @@ func TestPublishRun(t *testing.T) {
 }
 
 func TestDetectGitHubRemote_UsesDir(t *testing.T) {
-	// Create two separate git repos: "cwd-repo" simulates the working directory
-	// and "target-repo" simulates the directory argument passed to publish.
-	cwdRepo := t.TempDir()
-	initGitRepo(t, cwdRepo, map[string]string{
-		"origin": "https://github.com/monalisa/cwd-repo.git",
-	})
-
-	targetRepo := t.TempDir()
-	initGitRepo(t, targetRepo, map[string]string{
+	cs, cmdTeardown := run.Stub()
+	defer cmdTeardown(t)
+	stubGitRemote(cs, map[string]string{
 		"origin": "https://github.com/monalisa/target-repo.git",
 	})
 
-	// gitClient points at cwd-repo (simulating factory-provided client)
-	gitClient := &git.Client{RepoDir: cwdRepo}
+	cwdRepo := t.TempDir()
+	targetRepo := t.TempDir()
 
-	// detectGitHubRemote should use targetRepo's remotes, not cwdRepo's
+	gitClient := &git.Client{GitPath: "some/path/git", RepoDir: cwdRepo}
+
 	repo, err := detectGitHubRemote(gitClient, targetRepo)
 	require.NoError(t, err)
 	require.NotNil(t, repo)
@@ -1485,24 +1548,14 @@ func TestDetectGitHubRemote_UsesDir(t *testing.T) {
 }
 
 func TestPublishRun_DirArgUsesTargetRemote(t *testing.T) {
-	// Regression test: when a directory argument is provided, remote detection
-	// must use that directory's git remotes, not the factory client's directory.
-	//
-	// Scenario:
-	//   1. User is in cwd-repo (has remote → monalisa/cwd-repo)
-	//   2. User runs: gh skill publish /path/to/target-repo
-	//   3. target-repo has remote → monalisa/target-repo
-	//   4. API calls must go to target-repo, NOT cwd-repo
-
-	cwdRepo := t.TempDir()
-	initGitRepo(t, cwdRepo, map[string]string{
-		"origin": "https://github.com/monalisa/cwd-repo.git",
-	})
-
-	targetRepo := t.TempDir()
-	initGitRepo(t, targetRepo, map[string]string{
+	cs, cmdTeardown := run.Stub()
+	defer cmdTeardown(t)
+	stubGitRemote(cs, map[string]string{
 		"origin": "https://github.com/monalisa/target-repo.git",
 	})
+
+	cwdRepo := t.TempDir()
+	targetRepo := t.TempDir()
 
 	writeSkill(t, targetRepo, "my-skill", heredoc.Doc(`
 		---
@@ -1520,17 +1573,13 @@ func TestPublishRun_DirArgUsesTargetRemote(t *testing.T) {
 
 	reg := &httpmock.Registry{}
 	defer reg.Verify(t)
-
-	// Stub API calls for target-repo (the correct repo).
-	// If the bug is present, these stubs won't be called because the code
-	// would try to hit cwd-repo endpoints instead, and reg.Verify would fail.
 	stubAllSecureRemote(reg, "monalisa", "target-repo")
 
 	err := publishRun(&PublishOptions{
 		IO:         ios,
 		Dir:        targetRepo,
 		DryRun:     true,
-		GitClient:  &git.Client{RepoDir: cwdRepo},
+		GitClient:  &git.Client{GitPath: "some/path/git", RepoDir: cwdRepo},
 		HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
 		host:       "github.com",
 	})
@@ -1547,112 +1596,36 @@ func writeSkill(t *testing.T, dir, name, content string) {
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
 }
 
-// runGitInDir runs a git command in the given directory with isolation env vars.
-func runGitInDir(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+dir)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v: %s", args, out)
-}
-
-// newTestGitClientWithUpstream creates a git repo with a local bare "remote"
-// and an initial commit, so we can test push/rev-list behavior realistically.
-// It returns the git client and the working directory path.
-func newTestGitClientWithUpstream(t *testing.T) (*git.Client, string) {
-	t.Helper()
-	parentDir := t.TempDir()
-	bareDir := filepath.Join(parentDir, "upstream.git")
-	workDir := filepath.Join(parentDir, "work")
-
-	gitEnv := append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+parentDir)
-
-	run := func(dir string, args ...string) {
-		t.Helper()
-		c := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		c.Env = gitEnv
-		out, err := c.CombinedOutput()
-		require.NoError(t, err, "git %v: %s", args, out)
-	}
-
-	// Create bare upstream
-	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	run(bareDir, "init", "--bare", "--initial-branch=main")
-
-	// Clone into working dir
-	c := exec.Command("git", "clone", bareDir, workDir)
-	c.Env = gitEnv
-	out, err := c.CombinedOutput()
-	require.NoError(t, err, "git clone: %s", out)
-
-	run(workDir, "config", "user.email", "monalisa@github.com")
-	run(workDir, "config", "user.name", "Monalisa Octocat")
-
-	// Create initial commit and push
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# Test"), 0o644))
-	run(workDir, "add", ".")
-	run(workDir, "commit", "-m", "initial commit")
-	run(workDir, "push", "origin", "main")
-
-	return &git.Client{
-		RepoDir: workDir,
-		GitPath: "git",
-		Stderr:  &bytes.Buffer{},
-		Stdin:   &bytes.Buffer{},
-		Stdout:  &bytes.Buffer{},
-	}, workDir
-}
-
 func TestEnsurePushed(t *testing.T) {
 	tests := []struct {
 		name       string
-		setup      func(t *testing.T, workDir string)
-		verify     func(t *testing.T, workDir string)
+		cmdStubs   func(*run.CommandStubber)
 		wantErr    string
 		wantStderr string
 	}{
 		{
 			name: "no unpushed commits is a no-op",
-			setup: func(_ *testing.T, _ string) {
-				// initial commit already pushed by helper
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? symbolic-ref --quiet HEAD`, 0, "refs/heads/main\n")
+				cs.Register(`git( .+)? rev-list --count @\{push\}\.\.HEAD`, 0, "0\n")
 			},
 		},
 		{
 			name: "unpushed commits are pushed automatically",
-			setup: func(t *testing.T, workDir string) {
-				t.Helper()
-				require.NoError(t, os.WriteFile(filepath.Join(workDir, "new.txt"), []byte("new"), 0o644))
-				runGitInDir(t, workDir, "add", ".")
-				runGitInDir(t, workDir, "commit", "-m", "unpushed change")
-			},
-			verify: func(t *testing.T, workDir string) {
-				t.Helper()
-				// After push, rev-list should show 0 unpushed commits
-				cmd := exec.Command("git", "-C", workDir, "rev-list", "--count", "@{push}..HEAD")
-				cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+workDir)
-				out, err := cmd.CombinedOutput()
-				require.NoError(t, err, "rev-list: %s", out)
-				assert.Equal(t, "0", strings.TrimSpace(string(out)))
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? symbolic-ref --quiet HEAD`, 0, "refs/heads/main\n")
+				cs.Register(`git( .+)? rev-list --count @\{push\}\.\.HEAD`, 0, "1\n")
+				cs.Register(`git( .+)? push --set-upstream origin HEAD:refs/heads/main`, 0, "")
 			},
 			wantStderr: "Pushing main to origin",
 		},
 		{
-			name: "new branch never pushed is pushed automatically",
-			setup: func(t *testing.T, workDir string) {
-				t.Helper()
-				runGitInDir(t, workDir, "checkout", "-b", "feature")
-				require.NoError(t, os.WriteFile(filepath.Join(workDir, "feat.txt"), []byte("feat"), 0o644))
-				runGitInDir(t, workDir, "add", ".")
-				runGitInDir(t, workDir, "commit", "-m", "new branch commit")
-			},
-			verify: func(t *testing.T, workDir string) {
-				t.Helper()
-				// After push, the branch should exist on the remote
-				cmd := exec.Command("git", "-C", workDir, "rev-list", "--count", "@{push}..HEAD")
-				cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+workDir)
-				out, err := cmd.CombinedOutput()
-				require.NoError(t, err, "rev-list: %s", out)
-				assert.Equal(t, "0", strings.TrimSpace(string(out)))
+			name: "new branch that has not been pushed is pushed automatically",
+			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register(`git( .+)? symbolic-ref --quiet HEAD`, 0, "refs/heads/feature\n")
+				// rev-list fails when branch is not pushed
+				cs.Register(`git( .+)? rev-list --count @\{push\}\.\.HEAD`, 1, "")
+				cs.Register(`git( .+)? push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
 			},
 			wantStderr: "Pushing feature to origin",
 		},
@@ -1660,8 +1633,11 @@ func TestEnsurePushed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gitClient, workDir := newTestGitClientWithUpstream(t)
-			tt.setup(t, workDir)
+			cs, cmdTeardown := run.Stub()
+			defer cmdTeardown(t)
+			tt.cmdStubs(cs)
+
+			workDir := t.TempDir()
 
 			ios, _, _, stderr := iostreams.Test()
 			ios.SetStdoutTTY(true)
@@ -1669,7 +1645,7 @@ func TestEnsurePushed(t *testing.T) {
 
 			opts := &PublishOptions{
 				IO:        ios,
-				GitClient: gitClient,
+				GitClient: &git.Client{GitPath: "some/path/git", RepoDir: workDir},
 			}
 
 			err := ensurePushed(opts, workDir, "origin")
@@ -1682,9 +1658,6 @@ func TestEnsurePushed(t *testing.T) {
 			}
 			if tt.wantStderr != "" {
 				assert.Contains(t, stderr.String(), tt.wantStderr)
-			}
-			if tt.verify != nil {
-				tt.verify(t, workDir)
 			}
 		})
 	}
