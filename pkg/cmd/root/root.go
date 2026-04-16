@@ -38,6 +38,7 @@ import (
 	runCmd "github.com/cli/cli/v2/pkg/cmd/run"
 	searchCmd "github.com/cli/cli/v2/pkg/cmd/search"
 	secretCmd "github.com/cli/cli/v2/pkg/cmd/secret"
+	skillsCmd "github.com/cli/cli/v2/pkg/cmd/skills"
 	sshKeyCmd "github.com/cli/cli/v2/pkg/cmd/ssh-key"
 	statusCmd "github.com/cli/cli/v2/pkg/cmd/status"
 	variableCmd "github.com/cli/cli/v2/pkg/cmd/variable"
@@ -144,6 +145,7 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 	cmd.AddCommand(codespaceCmd.NewCmdCodespace(f))
 	cmd.AddCommand(projectCmd.NewCmdProject(f))
 	cmd.AddCommand(previewCmd.NewCmdPreview(f))
+	cmd.AddCommand(skillsCmd.NewCmdSkills(f))
 
 	// Root commands with standalone functionality and no subcommands
 	cmd.AddCommand(copilotCmd.NewCmdCopilot(f, nil))

@@ -14,9 +14,9 @@ import (
 
 	"math/rand"
 
+	"github.com/MakeNowJust/heredoc"
 	"github.com/cli/cli/v2/internal/ghcmd"
 	"github.com/cli/go-internal/testscript"
-	"github.com/MakeNowJust/heredoc"
 )
 
 func ghMain() int {
@@ -433,4 +433,12 @@ func (e *testScriptEnv) fromEnv() error {
 	e.skipDefer = os.Getenv("GH_ACCEPTANCE_SKIP_DEFER") == "true"
 
 	return nil
+}
+
+func TestSkills(t *testing.T) {
+	var tsEnv testScriptEnv
+	if err := tsEnv.fromEnv(); err != nil {
+		t.Fatal(err)
+	}
+	testscript.Run(t, testScriptParamsFor(tsEnv, "skills"))
 }
