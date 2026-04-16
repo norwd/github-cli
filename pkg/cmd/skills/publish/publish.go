@@ -42,8 +42,7 @@ type PublishOptions struct {
 	DryRun bool
 	Tag    string
 
-	client *api.Client // injectable for tests; nil means use factory
-	host   string      // resolved from config in production
+	host string // resolved from config in production
 }
 
 // publishDiagnostic is a single validation finding.
@@ -178,11 +177,10 @@ func publishRun(opts *PublishOptions) error {
 
 	canPrompt := opts.IO.CanPrompt()
 
-	// Use injected client or create one from the factory HttpClient.
-	// Initialization is deferred until after local validation so that
+	// Client initialization is deferred until after local validation so that
 	// simple errors (missing skills/, bad SKILL.md, etc.) are reported
 	// without requiring an HTTP client.
-	client := opts.client
+	var client *api.Client
 	host := opts.host
 
 	var diagnostics []publishDiagnostic
@@ -343,14 +341,11 @@ func publishRun(opts *PublishOptions) error {
 	hasTopic := false
 	var existingTags []tagEntry
 	if owner != "" && repo != "" {
-		// Create API client from factory if not already injected (tests inject directly).
-		if client == nil {
-			httpClient, err := opts.HttpClient()
-			if err != nil {
-				return err
-			}
-			client = api.NewClientFromHTTP(httpClient)
+		httpClient, err := opts.HttpClient()
+		if err != nil {
+			return err
 		}
+		client = api.NewClientFromHTTP(httpClient)
 
 		if host == "" && repoInfo != nil {
 			host = repoInfo.Repo.RepoHost()
@@ -658,10 +653,11 @@ func ensurePushed(opts *PublishOptions, dir, remoteName string) error {
 	}
 
 	ref := fmt.Sprintf("HEAD:refs/heads/%s", currentBranch)
-	fmt.Fprintf(opts.IO.ErrOut, "%s Pushing %s to %s\n", cs.SuccessIcon(), currentBranch, remoteName)
+	fmt.Fprintf(opts.IO.ErrOut, "Pushing %s to %s...\n", currentBranch, remoteName)
 	if err := gitClient.Push(ctx, remoteName, ref); err != nil {
 		return fmt.Errorf("failed to push branch %s: %w", currentBranch, err)
 	}
+	fmt.Fprintf(opts.IO.ErrOut, "%s Pushed %s to %s\n", cs.SuccessIcon(), currentBranch, remoteName)
 
 	return nil
 }
@@ -924,7 +920,9 @@ type gitHubRemote struct {
 }
 
 // detectGitHubRemote attempts to detect the GitHub owner/repo from git remotes
-// in the given directory.
+// in the given directory. Remotes are tried in the order returned by
+// gitClient.Remotes (upstream > github > origin > rest), so the first
+// GitHub-pointing remote wins.
 func detectGitHubRemote(gitClient *git.Client, dir string) (*gitHubRemote, error) {
 	if gitClient == nil {
 		return nil, nil
@@ -933,26 +931,11 @@ func detectGitHubRemote(gitClient *git.Client, dir string) (*gitHubRemote, error
 	dirClient := gitClient.Copy()
 	dirClient.RepoDir = dir
 
-	// Try origin first
-	if url, err := dirClient.RemoteURL(context.Background(), "origin"); err == nil {
-		repo, parseErr := parseGitHubURL(url)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		if repo != nil {
-			return &gitHubRemote{Repo: repo, RemoteName: "origin"}, nil
-		}
-	}
-
-	// Fall back to any remote that points to GitHub
 	remotes, err := dirClient.Remotes(context.Background())
 	if err != nil {
 		return nil, nil //nolint:nilerr // failing to list remotes is not an error; it just means no repo detected
 	}
 	for _, r := range remotes {
-		if r.Name == "origin" {
-			continue
-		}
 		if url, err := dirClient.RemoteURL(context.Background(), r.Name); err == nil {
 			repo, parseErr := parseGitHubURL(url)
 			if parseErr != nil {

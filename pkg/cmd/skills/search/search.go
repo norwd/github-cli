@@ -772,7 +772,14 @@ func fetchPrimaryPages(client *api.Client, host, query string, displayPage, disp
 
 // deduplicateResults extracts unique (repo, namespace, skill name) triples from code search hits.
 func deduplicateResults(items []codeSearchItem) []skillResult {
-	seen := make(map[string]struct{})
+	// skillResultKey is a typed map key that deduplicates by (repo, namespace,
+	// skill name). All fields are lowercased for case-insensitive comparison.
+	type skillResultKey struct {
+		repo      string
+		namespace string
+		skillName string
+	}
+	seen := make(map[skillResultKey]struct{})
 	var results []skillResult
 
 	for _, item := range items {
@@ -780,7 +787,11 @@ func deduplicateResults(items []codeSearchItem) []skillResult {
 		if skillName == "" {
 			continue
 		}
-		key := item.Repository.FullName + "/" + namespace + "/" + skillName
+		key := skillResultKey{
+			repo:      strings.ToLower(item.Repository.FullName),
+			namespace: strings.ToLower(namespace),
+			skillName: strings.ToLower(skillName),
+		}
 		if _, ok := seen[key]; ok {
 			continue
 		}

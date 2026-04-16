@@ -135,6 +135,7 @@ for _, tt := range tests {
 - Add godoc comments to all exported functions, types, and constants
 - Avoid unnecessary code comments — only comment when the *why* isn't obvious from the code
 - Do not comment just to restate what the code does
+- Never use em dashes (—) in code, comments, or documentation; use regular dashes (-) or rewrite the sentence instead
 
 ## Error Handling
 

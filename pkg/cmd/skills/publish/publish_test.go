@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc"
-	"github.com/cli/cli/v2/api"
 	"github.com/cli/cli/v2/git"
 	"github.com/cli/cli/v2/internal/prompter"
 	"github.com/cli/cli/v2/pkg/cmdutil"
@@ -162,11 +161,11 @@ func TestPublishRun_UnsupportedHost(t *testing.T) {
 	ios, _, _, _ := iostreams.Test()
 	initGitRepo(t, dir, map[string]string{"origin": "https://github.com/monalisa/skills-repo.git"})
 	err := publishRun(&PublishOptions{
-		IO:        ios,
-		Dir:       dir,
-		GitClient: &git.Client{},
-		client:    api.NewClientFromHTTP(&http.Client{}),
-		host:      "acme.ghes.com",
+		IO:         ios,
+		Dir:        dir,
+		GitClient:  &git.Client{},
+		HttpClient: func() (*http.Client, error) { return nil, nil },
+		host:       "acme.ghes.com",
 	})
 	require.ErrorContains(t, err, "supports only github.com")
 }
@@ -286,12 +285,12 @@ func TestPublishRun(t *testing.T) {
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					DryRun:    true,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					DryRun:     true,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "1 skill(s) validated successfully",
@@ -323,12 +322,12 @@ func TestPublishRun(t *testing.T) {
 			opts: func(ios *iostreams.IOStreams, dir string, reg *httpmock.Registry) *PublishOptions {
 				t.Helper()
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					DryRun:    true,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					DryRun:     true,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "1 skill(s) validated successfully",
@@ -357,12 +356,12 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					DryRun:    true,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					DryRun:     true,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "1 skill(s) validated successfully",
@@ -416,9 +415,9 @@ func TestPublishRun(t *testing.T) {
 					Prompter: &prompter.PrompterMock{
 						ConfirmFunc: func(msg string, def bool) (bool, error) { return true, nil },
 					},
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "Published v1.0.1",
@@ -564,11 +563,11 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/octocat/secure-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "secret scanning is not enabled",
@@ -617,11 +616,11 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/octocat/tag-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "tag protection",
@@ -680,12 +679,12 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/octocat/code-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					DryRun:    true,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					DryRun:     true,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStderr: "code scanning",
@@ -745,12 +744,12 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/octocat/dep-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					DryRun:    true,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					DryRun:     true,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStderr: "Dependabot",
@@ -895,12 +894,12 @@ func TestPublishRun(t *testing.T) {
 					"upstream": "git@github.com:octocat/repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					DryRun:    true,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					DryRun:     true,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStderr: "octocat/repo",
@@ -987,9 +986,9 @@ func TestPublishRun(t *testing.T) {
 					Prompter: &prompter.PrompterMock{
 						ConfirmFunc: func(msg string, def bool) (bool, error) { return true, nil },
 					},
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "Added \"agent-skills\" topic",
@@ -1059,12 +1058,12 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					Tag:       "v2.3.5",
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					Tag:        "v2.3.5",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "Published v2.3.5",
@@ -1091,12 +1090,12 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					Tag:       "v1.0.0", // same as stubAllSecureRemote's existing tag
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					Tag:        "v1.0.0", // same as stubAllSecureRemote's existing tag
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantErr: "tag v1.0.0 already exists",
@@ -1124,11 +1123,11 @@ func TestPublishRun(t *testing.T) {
 					"origin": "https://github.com/monalisa/skills-repo.git",
 				})
 				return &PublishOptions{
-					IO:        ios,
-					Dir:       dir,
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					IO:         ios,
+					Dir:        dir,
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "ok",
@@ -1237,9 +1236,9 @@ func TestPublishRun(t *testing.T) {
 							return "v1.0.0", nil // accept suggested tag
 						},
 					},
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "Published v1.0.0",
@@ -1294,9 +1293,9 @@ func TestPublishRun(t *testing.T) {
 							return "beta-1", nil
 						},
 					},
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "Published beta-1",
@@ -1350,9 +1349,9 @@ func TestPublishRun(t *testing.T) {
 							return "v1.0.1", nil
 						},
 					},
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantErr:    "CancelError",
@@ -1414,9 +1413,9 @@ func TestPublishRun(t *testing.T) {
 							return "v1.0.1", nil
 						},
 					},
-					GitClient: &git.Client{},
-					client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-					host:      "github.com",
+					GitClient:  &git.Client{},
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					host:       "github.com",
 				}
 			},
 			wantStdout: "Enabled immutable releases",
@@ -1528,12 +1527,12 @@ func TestPublishRun_DirArgUsesTargetRemote(t *testing.T) {
 	stubAllSecureRemote(reg, "monalisa", "target-repo")
 
 	err := publishRun(&PublishOptions{
-		IO:        ios,
-		Dir:       targetRepo,
-		DryRun:    true,
-		GitClient: &git.Client{RepoDir: cwdRepo},
-		client:    api.NewClientFromHTTP(&http.Client{Transport: reg}),
-		host:      "github.com",
+		IO:         ios,
+		Dir:        targetRepo,
+		DryRun:     true,
+		GitClient:  &git.Client{RepoDir: cwdRepo},
+		HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+		host:       "github.com",
 	})
 
 	require.NoError(t, err)
