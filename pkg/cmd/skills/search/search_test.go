@@ -8,6 +8,8 @@ import (
 
 	"github.com/cli/cli/v2/internal/config"
 	"github.com/cli/cli/v2/internal/gh"
+	"github.com/cli/cli/v2/internal/prompter"
+	"github.com/cli/cli/v2/internal/telemetry"
 	"github.com/cli/cli/v2/pkg/cmdutil"
 	"github.com/cli/cli/v2/pkg/httpmock"
 	"github.com/cli/cli/v2/pkg/iostreams"
@@ -102,7 +104,7 @@ func TestNewCmdSearch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &cmdutil.Factory{}
 			var gotOpts *SearchOptions
-			cmd := NewCmdSearch(f, func(opts *SearchOptions) error {
+			cmd := NewCmdSearch(f, &telemetry.NoOpService{}, func(opts *SearchOptions) error {
 				gotOpts = opts
 				return nil
 			})
@@ -372,6 +374,7 @@ func TestSearchRun(t *testing.T) {
 			ios.SetStdoutTTY(tt.tty)
 			ios.SetStderrTTY(tt.tty)
 			tt.opts.IO = ios
+			tt.opts.Telemetry = &telemetry.NoOpService{}
 
 			defer reg.Verify(t)
 			err := searchRun(tt.opts)
@@ -575,4 +578,76 @@ func TestDeduplicateByName_Namespaced(t *testing.T) {
 	for _, s := range result {
 		assert.NotEqual(t, "org/repo6", s.Repo)
 	}
+}
+
+// TestSearchRun_TelemetryRecordsInstallFromResults verifies that when a
+// user searches, picks one or more results interactively, and proceeds to
+// install them, the search command records a telemetry event capturing
+// that the search led to an install attempt. This is the key signal for
+// measuring the value of search results: of the searches that ran, how
+// many converted to an install?
+func TestSearchRun_TelemetryRecordsInstallFromResults(t *testing.T) {
+	codeResponse := `{"total_count": 1, "incomplete_results": false, "items": [
+		{"name": "SKILL.md", "path": "skills/terraform/SKILL.md", "sha": "abc123",
+		 "repository": {"full_name": "org/repo"}}
+	]}`
+
+	reg := &httpmock.Registry{}
+	defer reg.Verify(t)
+	// Keyword search fires path + owner + primary (3 requests).
+	for range 3 {
+		reg.Register(
+			httpmock.REST("GET", "search/code"),
+			httpmock.StringResponse(codeResponse),
+		)
+	}
+
+	ios, _, _, _ := iostreams.Test()
+	ios.SetStdoutTTY(true)
+	ios.SetStderrTTY(true)
+	ios.SetStdinTTY(true)
+
+	pm := &prompter.PrompterMock{
+		MultiSelectFunc: func(prompt string, defaults []string, options []string) ([]int, error) {
+			// Select the single result.
+			return []int{0}, nil
+		},
+		SelectFunc: func(prompt, defaultValue string, options []string) (int, error) {
+			// First Select: target agent (0). Second Select: scope (0).
+			return 0, nil
+		},
+	}
+
+	recorder := &telemetry.EventRecorderSpy{}
+
+	err := searchRun(&SearchOptions{
+		IO:             ios,
+		HttpClient:     func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+		Config:         func() (gh.Config, error) { return config.NewBlankConfig(), nil },
+		Prompter:       pm,
+		Telemetry:      recorder,
+		ExecutablePath: "/nonexistent/gh", // install subprocess will fail; failures are logged, not fatal.
+		Query:          "terraform",
+		Page:           1,
+		Limit:          defaultLimit,
+	})
+	require.NoError(t, err)
+
+	// The search command no longer records a separate skill_search event;
+	// only the follow-up skill_search_install event fires when the user
+	// proceeds to install from the results.
+	require.Len(t, recorder.Events, 1)
+
+	installEvent := recorder.Events[0]
+	assert.Equal(t, "skill_search_install", installEvent.Type,
+		"an install triggered from search results should be recorded as a distinct event")
+	assert.Equal(t, int64(1), installEvent.Measures["install_count"],
+		"install_count captures how many results the user chose to install")
+	// The skill_search_install event must not carry the query or owner:
+	// these were intentionally removed so that installs from search are
+	// not linked back to the search terms at the telemetry layer.
+	assert.Empty(t, installEvent.Dimensions["query"],
+		"skill_search_install must not record the search query")
+	assert.Empty(t, installEvent.Dimensions["owner"],
+		"skill_search_install must not record the search owner filter")
 }

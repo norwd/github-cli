@@ -7,9 +7,12 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/cli/cli/v2/api"
+	"github.com/cli/cli/v2/internal/gh/ghtelemetry"
+	"github.com/cli/cli/v2/internal/ghinstance"
 	"github.com/cli/cli/v2/internal/ghrepo"
 	"github.com/cli/cli/v2/internal/prompter"
 	"github.com/cli/cli/v2/internal/skills/discovery"
@@ -23,6 +26,7 @@ import (
 
 type PreviewOptions struct {
 	IO             *iostreams.IOStreams
+	Telemetry      ghtelemetry.EventRecorder
 	HttpClient     func() (*http.Client, error)
 	Prompter       prompter.Prompter
 	ExecutablePath string
@@ -36,9 +40,10 @@ type PreviewOptions struct {
 }
 
 // NewCmdPreview creates the "skills preview" command.
-func NewCmdPreview(f *cmdutil.Factory, runF func(*PreviewOptions) error) *cobra.Command {
+func NewCmdPreview(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, runF func(*PreviewOptions) error) *cobra.Command {
 	opts := &PreviewOptions{
 		IO:             f.IOStreams,
+		Telemetry:      telemetry,
 		HttpClient:     f.HttpClient,
 		Prompter:       f.Prompter,
 		ExecutablePath: f.ExecutablePath,
@@ -125,6 +130,19 @@ func previewRun(opts *PreviewOptions) error {
 	}
 	apiClient := api.NewClientFromHTTP(httpClient)
 
+	// Kick off the visibility fetch in parallel with the preview work so
+	// the extra API roundtrip doesn't add latency on the critical path.
+	// The result is consumed when the telemetry event is emitted below.
+	type visResult struct {
+		vis discovery.RepoVisibility
+		err error
+	}
+	visCh := make(chan visResult, 1)
+	go func() {
+		vis, err := discovery.FetchRepoVisibility(apiClient, hostname, owner, repoName)
+		visCh <- visResult{vis: vis, err: err}
+	}()
+
 	opts.IO.StartProgressIndicatorWithLabel(fmt.Sprintf("Resolving %s/%s", owner, repoName))
 	resolved, err := discovery.ResolveRef(apiClient, hostname, owner, repoName, opts.Version)
 	opts.IO.StopProgressIndicator()
@@ -177,17 +195,50 @@ func previewRun(opts *PreviewOptions) error {
 
 	// Non-interactive or skill has only SKILL.md: dump through pager
 	if !canPrompt || len(extraFiles) == 0 {
-		return renderAllFiles(opts, cs, skill, files, rendered, extraFiles, apiClient, hostname, owner, repoName)
+		renderAllFiles(opts, cs, skill, files, rendered, extraFiles, apiClient, hostname, owner, repoName)
+	} else {
+		// Interactive with multiple files: show tree, then file picker
+		renderInteractive(opts, cs, skill, files, rendered, extraFiles, apiClient, hostname, owner, repoName)
 	}
 
-	// Interactive with multiple files: show tree, then file picker
-	return renderInteractive(opts, cs, skill, files, rendered, extraFiles, apiClient, hostname, owner, repoName)
+	dims := map[string]string{
+		"skill_host_type": ghinstance.CategorizeHost(opts.repo.RepoHost()),
+	}
+	select {
+	case r := <-visCh:
+		if r.err == nil {
+			dims["repo_visibility"] = string(r.vis)
+			if r.vis == discovery.RepoVisibilityPublic {
+				dims["skill_owner"] = opts.repo.RepoOwner()
+				dims["skill_repo"] = opts.repo.RepoName()
+				dims["skill_name"] = skill.DisplayName()
+			}
+		} else {
+			dims["repo_visibility"] = "unknown"
+		}
+	case <-time.After(visibilityWaitTimeout):
+		dims["repo_visibility"] = "unknown"
+	}
+	opts.Telemetry.Record(ghtelemetry.Event{
+		Type:       "skill_preview",
+		Dimensions: dims,
+	})
+
+	return nil
 }
+
+// visibilityWaitTimeout is how long to wait at telemetry-emit time for
+// the in-flight repo visibility fetch before giving up and emitting
+// repo_visibility="unknown". By this point the command has already done
+// several serial API calls and rendering work, so the fetch has almost
+// always completed; this budget is a short safety net for the case
+// where that single REST call has stalled.
+const visibilityWaitTimeout = 200 * time.Millisecond
 
 // renderAllFiles dumps the tree, SKILL.md, and all extra files through the pager.
 func renderAllFiles(opts *PreviewOptions, cs *iostreams.ColorScheme, skill discovery.Skill,
 	files []discovery.SkillFile, rendered string, extraFiles []discovery.SkillFile,
-	apiClient *api.Client, hostname, owner, repo string) error {
+	apiClient *api.Client, hostname, owner, repo string) {
 
 	opts.IO.DetectTerminalTheme()
 	if err := opts.IO.StartPager(); err != nil {
@@ -232,14 +283,12 @@ func renderAllFiles(opts *PreviewOptions, cs *iostreams.ColorScheme, skill disco
 			fmt.Fprintln(out)
 		}
 	}
-
-	return nil
 }
 
 // renderInteractive shows the file tree, then a picker to browse individual files.
 func renderInteractive(opts *PreviewOptions, cs *iostreams.ColorScheme, skill discovery.Skill,
 	files []discovery.SkillFile, renderedSkillMD string, extraFiles []discovery.SkillFile,
-	apiClient *api.Client, hostname, owner, repo string) error {
+	apiClient *api.Client, hostname, owner, repo string) {
 
 	// Show the file tree to stderr so it persists above the prompt
 	fmt.Fprintf(opts.IO.ErrOut, "\n%s\n", cs.Bold(skill.DisplayName()+"/"))
@@ -265,7 +314,7 @@ func renderInteractive(opts *PreviewOptions, cs *iostreams.ColorScheme, skill di
 
 		idx, err := opts.Prompter.Select("View a file (Esc to exit):", "", choices)
 		if err != nil {
-			return nil //nolint:nilerr // Prompter returns error on Esc/Ctrl-C; treat as graceful exit
+			return // Prompter returns error on Esc/Ctrl-C; treat as graceful exit
 		}
 
 		var content string

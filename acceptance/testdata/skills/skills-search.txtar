@@ -1,5 +1,5 @@
 # Search for skills matching a query
-exec gh skill search copilot
+exec gh skill search --owner github copilot
 stdout 'copilot'
 
 # Search with JSON output

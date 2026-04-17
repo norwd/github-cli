@@ -8,11 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/cli/cli/v2/api"
 	ghContext "github.com/cli/cli/v2/context"
 	"github.com/cli/cli/v2/git"
+	"github.com/cli/cli/v2/internal/gh/ghtelemetry"
+	"github.com/cli/cli/v2/internal/ghinstance"
 	"github.com/cli/cli/v2/internal/ghrepo"
 	"github.com/cli/cli/v2/internal/prompter"
 	"github.com/cli/cli/v2/internal/skills/discovery"
@@ -38,6 +41,7 @@ const (
 // InstallOptions holds all dependencies and user-provided flags for the install command.
 type InstallOptions struct {
 	IO         *iostreams.IOStreams
+	Telemetry  ghtelemetry.EventRecorder
 	HttpClient func() (*http.Client, error)
 	Prompter   prompter.Prompter
 	GitClient  *git.Client
@@ -59,9 +63,10 @@ type InstallOptions struct {
 }
 
 // NewCmdInstall creates the "skills install" command.
-func NewCmdInstall(f *cmdutil.Factory, runF func(*InstallOptions) error) *cobra.Command {
+func NewCmdInstall(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, runF func(*InstallOptions) error) *cobra.Command {
 	opts := &InstallOptions{
 		IO:         f.IOStreams,
+		Telemetry:  telemetry,
 		Prompter:   f.Prompter,
 		GitClient:  f.GitClient,
 		Remotes:    f.Remotes,
@@ -232,6 +237,19 @@ func installRun(opts *InstallOptions) error {
 		return err
 	}
 
+	// Kick off the visibility fetch in parallel with the install work so
+	// the extra API roundtrip doesn't add latency on the critical path.
+	// The result is consumed when the telemetry event is emitted below.
+	type visResult struct {
+		vis discovery.RepoVisibility
+		err error
+	}
+	visCh := make(chan visResult, 1)
+	go func() {
+		vis, err := discovery.FetchRepoVisibility(apiClient, hostname, opts.repo.RepoOwner(), opts.repo.RepoName())
+		visCh <- visResult{vis: vis, err: err}
+	}()
+
 	resolved, err := resolveVersion(opts, apiClient, hostname)
 	if err != nil {
 		return err
@@ -325,7 +343,55 @@ func installRun(opts *InstallOptions) error {
 		}
 	}
 
+	dims := map[string]string{
+		"agent_hosts":     mapAgentHostsToIDs(selectedHosts),
+		"skill_host_type": ghinstance.CategorizeHost(opts.repo.RepoHost()),
+	}
+	select {
+	case r := <-visCh:
+		if r.err == nil {
+			dims["repo_visibility"] = string(r.vis)
+			if r.vis == discovery.RepoVisibilityPublic {
+				dims["skill_owner"] = opts.repo.RepoOwner()
+				dims["skill_repo"] = opts.repo.RepoName()
+				dims["skill_names"] = mapSkillsToNames(selectedSkills)
+			}
+		} else {
+			dims["repo_visibility"] = "unknown"
+		}
+	case <-time.After(visibilityWaitTimeout):
+		dims["repo_visibility"] = "unknown"
+	}
+	opts.Telemetry.Record(ghtelemetry.Event{
+		Type:       "skill_install",
+		Dimensions: dims,
+	})
+
 	return nil
+}
+
+// visibilityWaitTimeout is how long to wait at telemetry-emit time for
+// the in-flight repo visibility fetch before giving up and emitting
+// repo_visibility="unknown". By this point the command has already done
+// several serial API calls and (for install) a git sparse-checkout, so
+// the fetch has almost always completed; this budget is a short safety
+// net for the case where that single REST call has stalled.
+const visibilityWaitTimeout = 200 * time.Millisecond
+
+func mapSkillsToNames(skills []discovery.Skill) string {
+	names := make([]string, len(skills))
+	for i, s := range skills {
+		names[i] = s.DisplayName()
+	}
+	return strings.Join(names, ",")
+}
+
+func mapAgentHostsToIDs(hosts []*registry.AgentHost) string {
+	agentHostIDs := make([]string, len(hosts))
+	for i, h := range hosts {
+		agentHostIDs[i] = h.ID
+	}
+	return strings.Join(agentHostIDs, ",")
 }
 
 // runLocalInstall handles installation from a local directory path.
