@@ -540,7 +540,7 @@ func promptInstall(opts *SearchOptions, skills []skillResult) error {
 	}
 
 	indices, err := opts.Prompter.MultiSelect(
-		"Select skills to install (press Enter to skip):",
+		"Select skills to install:",
 		nil,
 		options,
 	)
