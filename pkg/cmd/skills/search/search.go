@@ -47,12 +47,12 @@ var SkillSearchFields = []string{
 }
 
 type SearchOptions struct {
-	IO         *iostreams.IOStreams
-	HttpClient func() (*http.Client, error)
-	Config     func() (gh.Config, error)
-	Prompter   prompter.Prompter
-	Executable string // path to the current gh binary for install subprocess
-	Exporter   cmdutil.Exporter
+	IO             *iostreams.IOStreams
+	HttpClient     func() (*http.Client, error)
+	Config         func() (gh.Config, error)
+	Prompter       prompter.Prompter
+	ExecutablePath string // path to the current gh binary for install subprocess
+	Exporter       cmdutil.Exporter
 
 	// User inputs
 	Query string
@@ -64,11 +64,11 @@ type SearchOptions struct {
 // NewCmdSearch creates the "skills search" command.
 func NewCmdSearch(f *cmdutil.Factory, runF func(*SearchOptions) error) *cobra.Command {
 	opts := &SearchOptions{
-		IO:         f.IOStreams,
-		HttpClient: f.HttpClient,
-		Config:     f.Config,
-		Prompter:   f.Prompter,
-		Executable: f.Executable(),
+		IO:             f.IOStreams,
+		HttpClient:     f.HttpClient,
+		Config:         f.Config,
+		Prompter:       f.Prompter,
+		ExecutablePath: f.ExecutablePath,
 	}
 
 	cmd := &cobra.Command{
@@ -585,7 +585,7 @@ func promptInstall(opts *SearchOptions, skills []skillResult) error {
 		}
 
 		//nolint:gosec // arguments are from user-selected search results, not arbitrary input
-		cmd := exec.Command(opts.Executable, "skills", "install", s.Repo, installArg,
+		cmd := exec.Command(opts.ExecutablePath, "skills", "install", s.Repo, installArg,
 			"--agent", host.ID, "--scope", scope)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = opts.IO.Out

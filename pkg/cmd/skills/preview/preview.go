@@ -22,11 +22,11 @@ import (
 )
 
 type PreviewOptions struct {
-	IO         *iostreams.IOStreams
-	HttpClient func() (*http.Client, error)
-	Prompter   prompter.Prompter
-	Executable func() string
-	RenderFile func(string, string) string
+	IO             *iostreams.IOStreams
+	HttpClient     func() (*http.Client, error)
+	Prompter       prompter.Prompter
+	ExecutablePath string
+	RenderFile     func(string, string) string
 
 	RepoArg   string
 	SkillName string
@@ -38,10 +38,10 @@ type PreviewOptions struct {
 // NewCmdPreview creates the "skills preview" command.
 func NewCmdPreview(f *cmdutil.Factory, runF func(*PreviewOptions) error) *cobra.Command {
 	opts := &PreviewOptions{
-		IO:         f.IOStreams,
-		HttpClient: f.HttpClient,
-		Prompter:   f.Prompter,
-		Executable: f.Executable,
+		IO:             f.IOStreams,
+		HttpClient:     f.HttpClient,
+		Prompter:       f.Prompter,
+		ExecutablePath: f.ExecutablePath,
 	}
 	opts.RenderFile = func(filePath, content string) string {
 		return renderMarkdownPreview(opts.IO, filePath, content)

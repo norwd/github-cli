@@ -1,10 +1,12 @@
-package cmdutil
+package ghcmd
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func Test_executable(t *testing.T) {
@@ -113,11 +115,8 @@ func Test_executable_relative(t *testing.T) {
 	}
 }
 
-func Test_Executable_override(t *testing.T) {
+func TestExecutablePath(t *testing.T) {
 	override := strings.Join([]string{"C:", "cygwin64", "home", "gh.exe"}, string(os.PathSeparator))
 	t.Setenv("GH_PATH", override)
-	f := Factory{}
-	if got := f.Executable(); got != override {
-		t.Errorf("executable() = %q, want %q", got, override)
-	}
+	require.Equal(t, override, executablePath("gh"))
 }

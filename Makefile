@@ -38,6 +38,10 @@ completions: bin/gh$(EXE)
 	bin/gh$(EXE) completion -s fish > ./share/fish/vendor_completions.d/gh.fish
 	bin/gh$(EXE) completion -s zsh > ./share/zsh/site-functions/_gh
 
+.PHONY: lint
+lint:
+	golangci-lint run ./...
+
 # just convenience tasks around `go test`
 .PHONY: test
 test:

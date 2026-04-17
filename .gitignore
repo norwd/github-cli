@@ -39,3 +39,7 @@
 
 vendor/
 gh
+
+# Test coverage artifacts
+coverage.out
+lcov.info
