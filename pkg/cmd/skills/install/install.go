@@ -80,24 +80,24 @@ func NewCmdInstall(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, ru
 			Install agent skills from a GitHub repository or local directory into
 			your local environment. Skills are placed in a host-specific directory
 			at either project scope (inside the current git repository) or user
-			scope (in your home directory, available everywhere). Supported hosts
-			and their storage directories are (project, user):
+			scope (in your home directory, available everywhere).
 
-			  - GitHub Copilot (%[1]s.agents/skills%[1]s, %[1]s~/.copilot/skills%[1]s)
-			  - Claude Code    (%[1]s.claude/skills%[1]s, %[1]s~/.claude/skills%[1]s)
-			  - Cursor         (%[1]s.agents/skills%[1]s, %[1]s~/.cursor/skills%[1]s)
-			  - Codex          (%[1]s.agents/skills%[1]s, %[1]s~/.codex/skills%[1]s)
-			  - Gemini CLI     (%[1]s.agents/skills%[1]s, %[1]s~/.gemini/skills%[1]s)
-			  - Antigravity    (%[1]s.agents/skills%[1]s, %[1]s~/.gemini/antigravity/skills%[1]s)
+			A wide range of AI coding agents are supported, including GitHub
+			Copilot, Claude Code, Cursor, Codex, Gemini CLI, Antigravity, Amp,
+			Goose, Junie, OpenCode, Windsurf, and many more.
+
+			Supported %[1]s--agent%[1]s values:
+
+			%[2]s
 
 			Use %[1]s--agent%[1]s and %[1]s--scope%[1]s to control placement, or %[1]s--dir%[1]s for a
 			custom directory. The default scope is %[1]sproject%[1]s, and the default
 			agent is %[1]sgithub-copilot%[1]s (when running non-interactively).
 
-			At project scope, GitHub Copilot, Cursor, Codex, Gemini CLI, and
-			Antigravity all use the shared %[1]s.agents/skills%[1]s directory. If you
-			select multiple hosts that resolve to the same destination, each skill is
-			installed there only once.
+			At project scope, several agents (including GitHub Copilot, Cursor,
+			Codex, Gemini CLI, Antigravity, Amp, Cline, OpenCode, and Warp) share
+			the %[1]s.agents/skills%[1]s directory. If you select multiple hosts that
+			resolve to the same destination, each skill is installed there only once.
 
 			The first argument is a GitHub repository in %[1]sOWNER/REPO%[1]s format.
 			Use %[1]s--from-local%[1]s to install from a local directory instead.
@@ -133,7 +133,7 @@ func NewCmdInstall(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, ru
 			When run interactively, the command prompts for any missing arguments.
 			When run non-interactively, %[1]srepository%[1]s and a skill name are
 			required.
-		`, "`"),
+		`, "`", registry.AgentHelpList()),
 		Example: heredoc.Doc(`
 			# Interactive: choose repo, skill, and agent
 			$ gh skill install
@@ -198,7 +198,8 @@ func NewCmdInstall(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, ru
 		},
 	}
 
-	cmdutil.StringEnumFlag(cmd, &opts.Agent, "agent", "", "", registry.AgentIDs(), "Target agent")
+	agentFlag := cmdutil.StringEnumFlag(cmd, &opts.Agent, "agent", "", "", registry.AgentIDs(), "Target agent")
+	agentFlag.Usage = "Target agent (see supported values above)"
 	cmdutil.StringEnumFlag(cmd, &opts.Scope, "scope", "", "project", []string{"project", "user"}, "Installation scope")
 	cmd.Flags().StringVar(&opts.Pin, "pin", "", "Pin to a specific git tag or commit SHA")
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "Install to a custom directory (overrides --agent and --scope)")
@@ -336,6 +337,7 @@ func installRun(opts *InstallOptions) error {
 
 			printFileTree(opts.IO.ErrOut, cs, result.Dir, result.Installed)
 			printReviewHint(opts.IO.ErrOut, cs, repoSource, resolved.SHA, result.Installed)
+			printHostHints(opts.IO.ErrOut, cs, plan.hosts, result.Installed, result.Dir, gitRoot)
 		}
 
 		if err != nil {
@@ -474,6 +476,7 @@ func runLocalInstall(opts *InstallOptions) error {
 
 		printFileTree(opts.IO.ErrOut, cs, result.Dir, result.Installed)
 		printReviewHint(opts.IO.ErrOut, cs, "", "", result.Installed)
+		printHostHints(opts.IO.ErrOut, cs, plan.hosts, result.Installed, result.Dir, gitRoot)
 	}
 
 	return nil
@@ -789,8 +792,18 @@ func resolveHosts(opts *InstallOptions, canPrompt bool) ([]*registry.AgentHost, 
 	}
 
 	fmt.Fprintln(opts.IO.ErrOut)
-	names := registry.AgentNames()
-	indices, err := opts.Prompter.MultiSelect("Select target agent(s):", []string{names[0]}, names)
+	labels := make([]string, len(registry.Agents))
+	defaultLabel := ""
+	for i, h := range registry.Agents {
+		labels[i] = h.Name
+		if h.ID == registry.DefaultAgentID {
+			defaultLabel = labels[i]
+		}
+	}
+	if defaultLabel == "" {
+		defaultLabel = labels[0]
+	}
+	indices, err := opts.Prompter.MultiSelect("Select target agent(s):", []string{defaultLabel}, labels)
 	if err != nil {
 		return nil, err
 	}
@@ -1057,4 +1070,44 @@ func printReviewHint(w io.Writer, cs *iostreams.ColorScheme, repo, sha string, s
 		}
 	}
 	fmt.Fprintln(w)
+}
+
+// printHostHints prints any agent-specific post-install guidance for the
+// hosts that were installed to. Most agents need no extra steps; this is
+// currently used for Kiro CLI, which requires skills to be registered as
+// resources on a custom agent. The path in the example is derived from
+// the actual install directory so it matches the chosen scope or --dir.
+func printHostHints(w io.Writer, cs *iostreams.ColorScheme, hosts []*registry.AgentHost, installed []string, installDir, gitRoot string) {
+	if len(installed) == 0 {
+		return
+	}
+	for _, h := range hosts {
+		if h.ID == "kiro-cli" {
+			fmt.Fprintln(w)
+			fmt.Fprint(w, heredoc.Docf(`
+				%s Kiro CLI: register these skills on a custom agent by adding them to
+				  .kiro/agents/<agent>.json under "resources", for example:
+
+				    {
+				      "resources": ["skill://%s/**/SKILL.md"]
+				    }
+			`, cs.WarningIcon(), kiroResourcePath(installDir, gitRoot)))
+			fmt.Fprintln(w)
+			return
+		}
+	}
+}
+
+// kiroResourcePath returns a slash-separated path suitable for use in the
+// "resources" field of a Kiro agent config. When the install directory is
+// inside the current git repository the path is made relative to the repo
+// root so the example works for project-scoped agent configs; otherwise
+// the absolute install path is used (e.g. for --scope user or --dir).
+func kiroResourcePath(installDir, gitRoot string) string {
+	if gitRoot != "" && installDir != "" {
+		if rel, err := filepath.Rel(gitRoot, installDir); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return filepath.ToSlash(installDir)
 }
