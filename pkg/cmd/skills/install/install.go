@@ -107,7 +107,9 @@ func NewCmdInstall(f *cmdutil.Factory, telemetry ghtelemetry.CommandRecorder, ru
 			tracking metadata injected into frontmatter.
 
 			Skills are discovered automatically using the %[1]sskills/*/SKILL.md%[1]s convention
-			defined by the Agent Skills specification. For more information on the specification, 
+			defined by the Agent Skills specification, including when the %[1]sskills/%[1]s
+			directory is nested under a prefix (e.g. %[1]sterraform/code-generation/skills/...%[1]s).
+			For more information on the specification,
 			see: https://agentskills.io/specification
 
 			The skill argument can be a name, a namespaced name (%[1]sauthor/skill%[1]s),
@@ -502,6 +504,9 @@ func isSkillPath(name string) bool {
 		return true
 	}
 	if strings.HasPrefix(name, "skills/") || strings.HasPrefix(name, "plugins/") {
+		return true
+	}
+	if strings.Contains(name, "/skills/") || strings.Contains(name, "/plugins/") {
 		return true
 	}
 	return false
