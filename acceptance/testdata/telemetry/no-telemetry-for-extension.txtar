@@ -22,7 +22,7 @@ cd $WORK
 # Run the extension and verify no telemetry is logged
 exec gh hello
 stdout 'hello from extension'
-! stderr 'Telemetry payload:'
+stderr 'Telemetry payload: none'
 
 -- gh-hello.sh --
 #!/usr/bin/env bash

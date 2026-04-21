@@ -125,6 +125,16 @@ func TestNewCmdInstall(t *testing.T) {
 			cli:      "monalisa/skills-repo --allow-hidden-dirs",
 			wantOpts: InstallOptions{SkillSource: "monalisa/skills-repo", Scope: "project", AllowHiddenDirs: true},
 		},
+		{
+			name:     "upstream flag",
+			cli:      "monalisa/skills-repo git-commit --upstream",
+			wantOpts: InstallOptions{SkillSource: "monalisa/skills-repo", SkillName: "git-commit", Scope: "project", Upstream: true},
+		},
+		{
+			name:    "from-local with --upstream is mutually exclusive",
+			cli:     "--from-local ./local-dir --upstream",
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2486,4 +2496,214 @@ func TestInstallRun_TelemetryMultipleSkills(t *testing.T) {
 	assert.Len(t, names, 2)
 	assert.Contains(t, names, "code-review")
 	assert.Contains(t, names, "git-commit")
+}
+
+var republishedContent = heredoc.Doc(`
+	---
+	name: git-commit
+	description: Writes commits
+	metadata:
+	  github-repo: https://github.com/monalisa/original-skills
+	  github-tree-sha: upstreamTreeSHA
+	  github-path: skills/git-commit
+	---
+	# Git Commit
+`)
+
+func stubContentsAPI(reg *httpmock.Registry, owner, repo, path, content string) {
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+	reg.Register(
+		httpmock.REST("GET", fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, path)),
+		httpmock.StringResponse(fmt.Sprintf(`{"content": %q, "encoding": "base64"}`, encoded)),
+	)
+}
+
+func TestInstallRun_UpstreamDetection(t *testing.T) {
+	tests := []struct {
+		name       string
+		isTTY      bool
+		stubs      func(*httpmock.Registry)
+		opts       func(t *testing.T, ios *iostreams.IOStreams, reg *httpmock.Registry) *InstallOptions
+		wantErr    string
+		wantStdout string
+		wantStderr string
+	}{
+		{
+			name:  "detects re-published skill and user picks re-publisher",
+			isTTY: true,
+			stubs: func(reg *httpmock.Registry) {
+				stubResolveVersion(reg, "monalisa", "skills-repo", "v1.0.0", "abc123")
+				stubDiscoverTree(reg, "monalisa", "skills-repo", "abc123",
+					singleSkillTreeJSON("git-commit", "treeSHA", "blobSHA"))
+				stubContentsAPI(reg, "monalisa", "skills-repo",
+					"skills/git-commit/SKILL.md", republishedContent)
+				stubInstallFiles(reg, "monalisa", "skills-repo",
+					"treeSHA", "blobSHA", republishedContent)
+			},
+			opts: func(t *testing.T, ios *iostreams.IOStreams, reg *httpmock.Registry) *InstallOptions {
+				return &InstallOptions{
+					IO:         ios,
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					GitClient:  &git.Client{RepoDir: t.TempDir()},
+					Prompter: &prompter.PrompterMock{
+						SelectFunc: func(_ string, _ string, choices []string) (int, error) {
+							require.Len(t, choices, 2)
+							assert.Contains(t, choices[0], "monalisa/skills-repo")
+							assert.Contains(t, choices[1], "monalisa/original-skills")
+							return 0, nil
+						},
+					},
+					Telemetry:    &telemetry.NoOpService{},
+					SkillSource:  "monalisa/skills-repo",
+					SkillName:    "git-commit",
+					Agent:        "github-copilot",
+					Scope:        "project",
+					ScopeChanged: true,
+					Dir:          t.TempDir(),
+				}
+			},
+			wantStderr: "originally published in monalisa/original-skills",
+			wantStdout: "Installed git-commit",
+		},
+		{
+			name:  "detects re-published skill and user picks upstream",
+			isTTY: true,
+			stubs: func(reg *httpmock.Registry) {
+				stubResolveVersion(reg, "monalisa", "skills-repo", "v1.0.0", "abc123")
+				stubDiscoverTree(reg, "monalisa", "skills-repo", "abc123",
+					singleSkillTreeJSON("git-commit", "treeSHA", "blobSHA"))
+				stubContentsAPI(reg, "monalisa", "skills-repo",
+					"skills/git-commit/SKILL.md", republishedContent)
+				stubResolveVersion(reg, "monalisa", "original-skills", "v2.0.0", "upstream456")
+				stubDiscoverTree(reg, "monalisa", "original-skills", "upstream456",
+					singleSkillTreeJSON("git-commit", "upTreeSHA", "upBlobSHA"))
+				stubContentsAPI(reg, "monalisa", "original-skills",
+					"skills/git-commit/SKILL.md", gitCommitContent)
+				stubInstallFiles(reg, "monalisa", "original-skills",
+					"upTreeSHA", "upBlobSHA", gitCommitContent)
+			},
+			opts: func(t *testing.T, ios *iostreams.IOStreams, reg *httpmock.Registry) *InstallOptions {
+				return &InstallOptions{
+					IO:         ios,
+					HttpClient: func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					GitClient:  &git.Client{RepoDir: t.TempDir()},
+					Prompter: &prompter.PrompterMock{
+						SelectFunc: func(_ string, _ string, choices []string) (int, error) {
+							require.Len(t, choices, 2)
+							assert.Contains(t, choices[0], "monalisa/skills-repo")
+							assert.Contains(t, choices[1], "monalisa/original-skills")
+							return 1, nil
+						},
+					},
+					Telemetry:    &telemetry.NoOpService{},
+					SkillSource:  "monalisa/skills-repo",
+					SkillName:    "git-commit",
+					Agent:        "github-copilot",
+					Scope:        "project",
+					ScopeChanged: true,
+					Dir:          t.TempDir(),
+				}
+			},
+			wantStderr: "Redirecting install to monalisa/original-skills",
+			wantStdout: "Installed git-commit",
+		},
+		{
+			name:  "non-interactive defaults to re-publisher with notice",
+			isTTY: false,
+			stubs: func(reg *httpmock.Registry) {
+				stubResolveVersion(reg, "monalisa", "skills-repo", "v1.0.0", "abc123")
+				stubDiscoverTree(reg, "monalisa", "skills-repo", "abc123",
+					singleSkillTreeJSON("git-commit", "treeSHA", "blobSHA"))
+				stubContentsAPI(reg, "monalisa", "skills-repo",
+					"skills/git-commit/SKILL.md", republishedContent)
+				stubInstallFiles(reg, "monalisa", "skills-repo",
+					"treeSHA", "blobSHA", republishedContent)
+			},
+			opts: func(t *testing.T, ios *iostreams.IOStreams, reg *httpmock.Registry) *InstallOptions {
+				return &InstallOptions{
+					IO:           ios,
+					HttpClient:   func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					GitClient:    &git.Client{RepoDir: t.TempDir()},
+					Telemetry:    &telemetry.NoOpService{},
+					SkillSource:  "monalisa/skills-repo",
+					SkillName:    "git-commit",
+					Agent:        "github-copilot",
+					Scope:        "project",
+					ScopeChanged: true,
+					Dir:          t.TempDir(),
+				}
+			},
+			wantStderr: "use --upstream",
+			wantStdout: "Installed git-commit",
+		},
+		{
+			name:  "non-interactive with --upstream redirects to upstream",
+			isTTY: false,
+			stubs: func(reg *httpmock.Registry) {
+				stubResolveVersion(reg, "monalisa", "skills-repo", "v1.0.0", "abc123")
+				stubDiscoverTree(reg, "monalisa", "skills-repo", "abc123",
+					singleSkillTreeJSON("git-commit", "treeSHA", "blobSHA"))
+				stubContentsAPI(reg, "monalisa", "skills-repo",
+					"skills/git-commit/SKILL.md", republishedContent)
+				stubResolveVersion(reg, "monalisa", "original-skills", "v2.0.0", "upstream456")
+				stubDiscoverTree(reg, "monalisa", "original-skills", "upstream456",
+					singleSkillTreeJSON("git-commit", "upTreeSHA", "upBlobSHA"))
+				stubContentsAPI(reg, "monalisa", "original-skills",
+					"skills/git-commit/SKILL.md", gitCommitContent)
+				stubInstallFiles(reg, "monalisa", "original-skills",
+					"upTreeSHA", "upBlobSHA", gitCommitContent)
+			},
+			opts: func(t *testing.T, ios *iostreams.IOStreams, reg *httpmock.Registry) *InstallOptions {
+				return &InstallOptions{
+					IO:           ios,
+					HttpClient:   func() (*http.Client, error) { return &http.Client{Transport: reg}, nil },
+					GitClient:    &git.Client{RepoDir: t.TempDir()},
+					Telemetry:    &telemetry.NoOpService{},
+					SkillSource:  "monalisa/skills-repo",
+					SkillName:    "git-commit",
+					Agent:        "github-copilot",
+					Scope:        "project",
+					ScopeChanged: true,
+					Dir:          t.TempDir(),
+					Upstream:     true,
+				}
+			},
+			wantStderr: "Redirecting install to monalisa/original-skills",
+			wantStdout: "Installed git-commit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := &httpmock.Registry{}
+			defer reg.Verify(t)
+			tt.stubs(reg)
+
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+
+			ios, _, stdout, stderr := iostreams.Test()
+			ios.SetStdoutTTY(tt.isTTY)
+			ios.SetStdinTTY(tt.isTTY)
+			ios.SetStderrTTY(tt.isTTY)
+			opts := tt.opts(t, ios, reg)
+
+			err := installRun(opts)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			if tt.wantStdout != "" {
+				assert.Contains(t, stdout.String(), tt.wantStdout)
+			}
+			if tt.wantStderr != "" {
+				assert.Contains(t, stderr.String(), tt.wantStderr)
+			}
+		})
+	}
 }
