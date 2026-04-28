@@ -40,7 +40,7 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.18.5
 	github.com/mattn/go-colorable v0.1.14
-	github.com/mattn/go-isatty v0.0.21
+	github.com/mattn/go-isatty v0.0.22
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d
 	github.com/microsoft/dev-tunnels v0.1.19
 	github.com/muhammadmuzzammil1998/jsonc v1.0.0
