@@ -34,7 +34,7 @@ import (
 // but doesn't mandate that prompts always look exactly the same.
 func TestAccessiblePrompter(t *testing.T) {
 
-	beforePasswordSendTimeout := 100 * time.Microsecond
+	beforePasswordSendTimeout := 100 * time.Millisecond
 
 	t.Run("Select", func(t *testing.T) {
 		console := newTestVirtualTerminal(t)
