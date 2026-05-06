@@ -127,7 +127,7 @@ func (c *CAPIClient) CreateJob(ctx context.Context, owner, repo, problemStatemen
 	return &j, nil
 }
 
-// GetJob retrieves a agent job
+// GetJob retrieves an agent job
 func (c *CAPIClient) GetJob(ctx context.Context, owner, repo, jobID string) (*Job, error) {
 	if owner == "" || repo == "" || jobID == "" {
 		return nil, errors.New("owner, repo, and jobID are required")
