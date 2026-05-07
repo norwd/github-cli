@@ -71,11 +71,15 @@ func Main() exitCode {
 	ghExecutablePath := executablePath("gh")
 
 	additionalCommonDimensions := ghtelemetry.Dimensions{
-		"version":        strings.TrimPrefix(buildVersion, "v"),
-		"is_tty":         strconv.FormatBool(ioStreams.IsStdoutTTY()),
-		"agent":          string(agents.Detect()),
-		"ci":             strconv.FormatBool(ci.IsCI()),
-		"github_actions": strconv.FormatBool(ci.IsGitHubActions()),
+		"version":             strings.TrimPrefix(buildVersion, "v"),
+		"is_tty":              strconv.FormatBool(ioStreams.IsStdoutTTY()),
+		"agent":               string(agents.Detect()),
+		"ci":                  strconv.FormatBool(ci.IsCI()),
+		"github_actions":      strconv.FormatBool(ci.IsGitHubActions()),
+		"accessible_colors":   strconv.FormatBool(ioStreams.AccessibleColorsEnabled()),
+		"accessible_prompter": strconv.FormatBool(ioStreams.AccessiblePrompterEnabled()),
+		"color_labels":        strconv.FormatBool(ioStreams.ColorLabels()),
+		"spinner_disabled":    strconv.FormatBool(ioStreams.GetSpinnerDisabled()),
 	}
 
 	var telemetryService ghtelemetry.Service
