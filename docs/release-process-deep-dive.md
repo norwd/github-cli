@@ -495,7 +495,7 @@ release:
           rpmsign --addsign dist/*.rpm
       - name: Attest release artifacts
         if: inputs.environment == 'production'
-        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: "dist/gh_*"
       - name: Run createrepo
