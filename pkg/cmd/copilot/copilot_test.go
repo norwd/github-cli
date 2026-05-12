@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -587,6 +588,32 @@ func TestDownloadCopilot(t *testing.T) {
 		require.NoError(t, err, "downloadCopilot() error")
 		require.Equal(t, localPath, path, "downloadCopilot() path mismatch")
 	})
+}
+
+func TestRunCopilot_execFailureHint(t *testing.T) {
+	ios, _, _, _ := iostreams.Test()
+	opts := &CopilotOptions{
+		IO:          ios,
+		CopilotArgs: []string{},
+	}
+
+	origFind := findCopilotBinaryFunc
+	findCopilotBinaryFunc = func() string {
+		return "/usr/bin/copilot"
+	}
+	t.Cleanup(func() { findCopilotBinaryFunc = origFind })
+
+	execErr := fmt.Errorf("exec failed: something went wrong")
+	origRun := runExternalCmdFunc
+	runExternalCmdFunc = func(_ *exec.Cmd) error {
+		return execErr
+	}
+	t.Cleanup(func() { runExternalCmdFunc = origRun })
+
+	err := runCopilot(opts)
+	require.Error(t, err)
+	require.ErrorIs(t, err, execErr)
+	require.Contains(t, err.Error(), "try running `copilot` directly without `gh`.")
 }
 
 func TestCopilotCommandIsSampledAt100(t *testing.T) {

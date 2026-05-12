@@ -142,8 +142,9 @@ func runCopilot(opts *CopilotOptions) error {
 		return nil
 	}
 
-	copilotPath := findCopilotBinary()
-	if copilotPath == "" {
+	copilotPath := findCopilotBinaryFunc()
+	foundInPath := copilotPath != ""
+	if !foundInPath {
 		if opts.IO.CanPrompt() {
 			confirmed, err := opts.Prompter.Confirm("GitHub Copilot CLI is not installed. Would you like to install it?", true)
 			if err != nil {
@@ -175,11 +176,17 @@ func runCopilot(opts *CopilotOptions) error {
 	externalCmd.Stderr = opts.IO.ErrOut
 	externalCmd.Env = append(os.Environ(), "COPILOT_GH=true")
 
-	if err := externalCmd.Run(); err != nil {
+	if err := runExternalCmdFunc(externalCmd); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// We terminate with os.Exit here, preserving the exit code from Copilot CLI,
 			// and also preventing stdio writes by callers up the stack.
 			os.Exit(exitErr.ExitCode())
+		}
+		if foundInPath {
+			// We found a `copilot` binary but exec failed, possibly due to
+			// unusual characters in the path (see https://github.com/cli/cli/issues/13106).
+			// Suggest running copilot directly as a workaround.
+			return fmt.Errorf("%w\nFailed to run '%s', try running `copilot` directly without `gh`.", err, copilotPath)
 		}
 		return err
 	}
@@ -199,6 +206,14 @@ func copilotBinaryPath() string {
 	}
 	return filepath.Join(copilotInstallDir(), binaryName)
 }
+
+var runExternalCmdFunc = runExternalCmd
+
+func runExternalCmd(cmd *exec.Cmd) error {
+	return cmd.Run()
+}
+
+var findCopilotBinaryFunc = findCopilotBinary
 
 // findCopilotBinary returns the path to the Copilot CLI binary, if installed,
 // with the following order of precedence:
