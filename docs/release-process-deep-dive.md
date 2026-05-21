@@ -11,7 +11,6 @@ From a high level, the [release workflow](https://github.com/cli/cli/blob/537a22
  * Builds and updates the [manual](https://cli.github.com/manual) and repository packages
  * Creates GitHub Attestations for the artifacts
  * Creates a GitHub Release and attaches the artifacts
- * Bumps the `gh` [homebrew-core formula](https://github.com/Homebrew/homebrew-core/blob/2df031cbd8f7bc9b9a380e941ccefcf3c8f3d02b/Formula/g/gh.rb)
 
 # Jobs Deep Dive
 
@@ -569,16 +568,6 @@ release:
             git log --oneline @{upstream}..
             git diff --name-status @{upstream}..
           fi
-      - name: Bump homebrew-core formula
-        uses: mislav/bump-homebrew-formula-action@v3
-        if: inputs.environment == 'production' && !contains(inputs.tag_name, '-')
-        with:
-          formula-name: gh
-          formula-path: Formula/g/gh.rb
-          tag-name: ${{ inputs.tag_name }}
-          push-to: williammartin/homebrew-core
-        env:
-          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_PR_PAT }}
 ```
 </details>
 
@@ -647,11 +636,11 @@ In previous steps, a git commit was made for the manual, and files had moved int
 
 Occasionally, the repository can become unwieldy due to hosting so many large binary artifacts. Instructions can be found in the README for that repository.
 
-#### Homebrew Formula
+#### Homebrew
 
-Using [`mislav/bump-homebrew-formula-action`](https://github.com/mislav/bump-homebrew-formula-action), a PR for the `gh` [`homebrew-core` formula](https://github.com/Homebrew/homebrew-core/blob/master/Formula/g/gh.rb) is created. The fork repository is currently owned by `williammartin` as PRs are [not accepted from organizations.](https://github.com/cli/cli/pull/7953)
+Historically, we used [`mislav/bump-homebrew-formula-action`](https://github.com/mislav/bump-homebrew-formula-action). It created a PR for the `gh` [`homebrew-core` formula](https://github.com/Homebrew/homebrew-core/blob/master/Formula/g/gh.rb). The fork repository was owned by `williammartin` because PRs are [not accepted from organizations.](https://github.com/cli/cli/pull/7953)
 
-`Homebrew/formulae.brew.sh` makes new formula versions available every 15 minutes through scheduled CI workflow. For more information, see https://docs.brew.sh/Formula-Cookbook#an-introduction
+However, since this required a legacy PAT token to open a PR between these repositories, it was deemed too much risk for our security. As such, we now rely on [Homebrew's autobump](https://docs.brew.sh/Autobump).
 
 ## <a id="deepest-dive">Deepest Dive</a>
 
