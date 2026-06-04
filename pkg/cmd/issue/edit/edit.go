@@ -185,6 +185,12 @@ func NewCmdEdit(f *cmdutil.Factory, runF func(*EditOptions) error) *cobra.Comman
 				opts.Editable.IssueType.Edited = true
 			}
 
+			// hasDeferredFlags covers edit flags that flow through the
+			// deferred update path rather than the prShared.Editable struct,
+			// so they would otherwise be invisible to Editable.Dirty() below.
+			// Note that --type (set) is intentionally absent: it lights up
+			// opts.Editable.IssueType.Edited above, which Editable.Dirty()
+			// already picks up. Only --remove-type needs to be listed here.
 			hasDeferredFlags := opts.RemoveIssueType ||
 				flags.Changed("parent") || opts.RemoveParent ||
 				len(opts.AddSubIssues) > 0 || len(opts.RemoveSubIssues) > 0 ||
@@ -482,7 +488,7 @@ func deferredUpdateIssueOptions(client *api.Client, baseRepo ghrepo.Interface, i
 	} else if editOpts.Parent != "" {
 		parentID, err := issueShared.ResolveIssueRef(client, baseRepo, editOpts.Parent)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --parent reference %q: %w", editOpts.Parent, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --parent reference %q: %w", editOpts.Parent, err)
 		}
 		updateOpts.ParentID = parentID
 	}
@@ -490,14 +496,14 @@ func deferredUpdateIssueOptions(client *api.Client, baseRepo ghrepo.Interface, i
 	for _, ref := range editOpts.AddSubIssues {
 		id, err := issueShared.ResolveIssueRef(client, baseRepo, ref)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --add-sub-issue reference %q: %w", ref, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --add-sub-issue reference %q: %w", ref, err)
 		}
 		updateOpts.AddSubIssueIDs = append(updateOpts.AddSubIssueIDs, id)
 	}
 	for _, ref := range editOpts.RemoveSubIssues {
 		id, err := issueShared.ResolveIssueRef(client, baseRepo, ref)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --remove-sub-issue reference %q: %w", ref, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --remove-sub-issue reference %q: %w", ref, err)
 		}
 		updateOpts.RemoveSubIssueIDs = append(updateOpts.RemoveSubIssueIDs, id)
 	}
@@ -505,14 +511,14 @@ func deferredUpdateIssueOptions(client *api.Client, baseRepo ghrepo.Interface, i
 	for _, ref := range editOpts.AddBlockedBy {
 		id, err := issueShared.ResolveIssueRef(client, baseRepo, ref)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --add-blocked-by reference %q: %w", ref, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --add-blocked-by reference %q: %w", ref, err)
 		}
 		updateOpts.AddBlockedByIDs = append(updateOpts.AddBlockedByIDs, id)
 	}
 	for _, ref := range editOpts.RemoveBlockedBy {
 		id, err := issueShared.ResolveIssueRef(client, baseRepo, ref)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --remove-blocked-by reference %q: %w", ref, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --remove-blocked-by reference %q: %w", ref, err)
 		}
 		updateOpts.RemoveBlockedByIDs = append(updateOpts.RemoveBlockedByIDs, id)
 	}
@@ -520,14 +526,14 @@ func deferredUpdateIssueOptions(client *api.Client, baseRepo ghrepo.Interface, i
 	for _, ref := range editOpts.AddBlocking {
 		id, err := issueShared.ResolveIssueRef(client, baseRepo, ref)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --add-blocking reference %q: %w", ref, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --add-blocking reference %q: %w", ref, err)
 		}
 		updateOpts.AddBlockingIDs = append(updateOpts.AddBlockingIDs, id)
 	}
 	for _, ref := range editOpts.RemoveBlocking {
 		id, err := issueShared.ResolveIssueRef(client, baseRepo, ref)
 		if err != nil {
-			return updateOpts, fmt.Errorf("resolving --remove-blocking reference %q: %w", ref, err)
+			return api.DeferredUpdateIssueOptions{}, fmt.Errorf("resolving --remove-blocking reference %q: %w", ref, err)
 		}
 		updateOpts.RemoveBlockingIDs = append(updateOpts.RemoveBlockingIDs, id)
 	}
