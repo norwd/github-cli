@@ -21,7 +21,7 @@ func NewCmdDiscussion(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			$ gh discussion list
-			$ gh discussion create --category "General" --title "Hello"
+			$ gh discussion create --category "General" --title "Hello" --body "Hello World!"
 			$ gh discussion view 123
 		`),
 		Annotations: map[string]string{
